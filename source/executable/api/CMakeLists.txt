@@ -1,0 +1,3 @@
+set(PRIVATE_SOURCES)
+
+target_sources(${TARGET_NAME} PRIVATE ${PRIVATE_SOURCES})

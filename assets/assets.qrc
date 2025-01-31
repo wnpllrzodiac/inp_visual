@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/assets/fonts">
+        <file alias="uifont.ttf">fonts/uifont.ttf</file>
+    </qresource>
+</RCC>
