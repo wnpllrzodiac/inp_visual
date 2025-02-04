@@ -4,13 +4,10 @@ set(SOURCES vtkwidget.cpp vtkwidget.h configwidget.cpp configwidget.h
 
 add_library(${TARGET_NAME} STATIC ${SOURCES})
 
-target_link_libraries(${TARGET_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-                                             Qt${QT_VERSION_MAJOR}::Core utils)
-find_package(
-  VTK
-  COMPONENTS InteractionStyle RenderingOpenGL2 ViewsQt GUISupportQt
-  REQUIRED)
 
-target_link_libraries(${TARGET_NAME} PUBLIC VTK::GUISupportQt VTK::ViewsQt
-                                            VTK::RenderingOpenGL2)
+create_and_init_vtk_target(${TARGET_NAME})
+target_link_libraries(${TARGET_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+                                             Qt${QT_VERSION_MAJOR}::Core utils  PUBLIC vtk)
+
+
 target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.23.0 FATAL_ERROR)
 
 set(TARGET_NAME ${PROJECT_NAME})
 
+
 find_package(QT NAMES Qt6 Qt5 CONFIG REQUIRED COMPONENTS Widgets Network
                                                          Concurrent)
 find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED COMPONENTS Widgets Network
@@ -34,7 +35,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES DEBUG_POSTFIX
 
 if(WIN32)
   if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set_target_properties(${TARGET_NAME} PROPERTIES WIN32_EXECUTABLE ON)
+    # set_target_properties(${TARGET_NAME} PROPERTIES WIN32_EXECUTABLE ON)
   endif()
 endif()
 

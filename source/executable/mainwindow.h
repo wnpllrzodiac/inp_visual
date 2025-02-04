@@ -12,7 +12,10 @@ public:
     ~MainWindow();
 
 public slots:
-    void openInpFile();
+    void openAbaqusFile();
+    void openGmshFile();
+    void openVtuFile();
+    void openVtkFile();
     void saveInpFile();
 
 private:
@@ -20,7 +23,10 @@ private:
     void setupConnections();
     void retranslateUI();
 
-    QAction* open_action_;
+    QAction* open_abaqus_action_;
+    QAction* open_gmsh_action_;
+    QAction* open_vtu_action_;
+    QAction* open_vtk_action_;
     QAction* save_action_;
     ConfigWidget* configWidget_;
     VtkWidget* vtkWidget_;

@@ -12,249 +12,354 @@
 #include <vtkTransformFilter.h>
 #include <vtkTriangle.h>
 
-vtkSmartPointer<vtkUnstructuredGrid> InpReader::parse(const QString& file_name)
+vtkSmartPointer<vtkUnstructuredGrid> InpReader::parseGmsh(const QString& file_name)
 {
-    // 最终合并后的主网格
+    // 创建返回的网格
+    auto grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
+    // 节点映射表，用于 processNodes 和 processElements 的关联
+    QHash<int, vtkIdType> node_map;
+    // 创建用于存放节点的点集合
+    auto points = vtkSmartPointer<vtkPoints>::New();
+
+    QFile file(file_name);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        // 如果无法打开文件，返回空网格
+        return grid;
+    }
+
+    QTextStream stream(&file);
+    QString line;
+    // 对于节点坐标没有偏移，所以默认为0
+    double offset[3] = { 0.0, 0.0, 0.0 };
+
+    while (!stream.atEnd()) {
+        line = stream.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+
+        if (line.startsWith("*Heading", Qt::CaseInsensitive)) {
+            // 解析 Heading 区域，获取模型信息
+            processHeading(stream);
+        } else if (line.startsWith("*NODE", Qt::CaseInsensitive)) {
+            // 解析节点数据
+            processNodesBulk(stream, grid, node_map, offset);
+            grid->SetPoints(points);
+        } else if (line.startsWith("*ELEMENT", Qt::CaseInsensitive)) {
+            // 解析单元数据（目前仅假设为三角形单元）
+            processElementsBulk(stream, grid, node_map);
+        }
+        // 其他关键字（例如 *ELSET、*NSET 等）暂不处理
+    }
+
+    return grid;
+}
+
+vtkSmartPointer<vtkUnstructuredGrid> InpReader::parseAbaqus(const QString& file_name)
+
+{
     auto main_grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
     parts_map_.clear();
     instances_map_.clear();
 
     QFile file(file_name);
     if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        // 打不开文件就返回一个空网格
         return main_grid;
     }
-
     QTextStream stream(&file);
-    QString line;
-    // 临时保存的简单平移变换
+
     double transform[3] = { 0, 0, 0 };
-
     while (!stream.atEnd()) {
-        line = stream.readLine().trimmed();
-
+        // 读一行
+        QString line = stream.readLine().trimmed();
         if (line.startsWith("*Heading", Qt::CaseInsensitive)) {
             processHeading(stream);
         } else if (line.startsWith("*Part,", Qt::CaseInsensitive)) {
             // 解析部件名
             QString part_name = line.section("name=", 1).section(',', 0, 0).trimmed();
-
-            // 创建该部件对应的网格
             auto part_grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
-            auto part_points = vtkSmartPointer<vtkPoints>::New();
             QHash<int, vtkIdType> part_node_map;
 
-            // 读取 *Node 和 *Element
+            // 进入 part 内部
             while (!stream.atEnd()) {
+                qint64 pos_before = stream.pos();
                 QString sub_line = stream.readLine().trimmed();
                 if (sub_line.startsWith("*End Part", Qt::CaseInsensitive)) {
                     break;
                 } else if (sub_line.startsWith("*Node", Qt::CaseInsensitive)) {
-                    processNodes(stream, part_points, part_node_map, transform);
-                    // 这里一定要把解析到的点设置到网格里
-                    part_grid->SetPoints(part_points);
+                    // 回退，让 process_nodes_bulk 自己从下一行开始读
+                    stream.seek(pos_before);
+                    processNodesBulk(stream, part_grid, part_node_map, transform);
                 } else if (sub_line.startsWith("*Element", Qt::CaseInsensitive)) {
-                    processElements(stream, part_grid, part_node_map);
+                    // 回退
+                    stream.seek(pos_before);
+                    processElementsBulk(stream, part_grid, part_node_map);
                 }
             }
 
-            // 保存到 parts_map_ 里
             parts_map_[part_name] = part_grid;
         } else if (line.startsWith("*Assembly", Qt::CaseInsensitive)) {
             processAssembly(stream);
         } else if (line.startsWith("*Instance", Qt::CaseInsensitive)) {
-            // 如果 inp 文件有可能在此处直接定义 Instance 平移，也可以在这里解析
+            // 如果有写在外面，简单解析 transform
             parseTransform(line, transform);
         }
     }
 
-    // 根据 instances_map_，把所有实例对应的部件合并到 main_grid
+    // 合并所有 instances 到 main_grid
     for (auto it = instances_map_.cbegin(); it != instances_map_.cend(); ++it) {
         const QString& instance_name = it.key();
-        const instance_info_t& info = it.value();
-        if (parts_map_.contains(info.part_name)) {
-            auto part_grid = parts_map_.value(info.part_name);
-            mergeGrids(main_grid, part_grid, info.transform);
+        const instance_info_t& instance_info = it.value();
+        if (parts_map_.contains(instance_info.part_name)) {
+            mergeGrids(main_grid, parts_map_.value(instance_info.part_name), instance_info.transform);
         }
     }
-
     return main_grid;
 }
 
-void InpReader::processHeading(QTextStream& stream)
+//------------------------------------------------------
+// 批量解析节点 (Node)
+// 不再一行行地往 points 里 insert_next_point
+// 而是先把所有节点行存进 vector，一次性设置 Points
+//------------------------------------------------------
+void InpReader::processNodesBulk(
+    QTextStream& stream, vtkSmartPointer<vtkUnstructuredGrid>& grid, QHash<int, vtkIdType>& node_map, const double offset[3])
 {
-    // 读取 Heading 区域行，并尝试匹配若干信息
-    QString line;
+    // 临时存储所有节点行
+    std::vector<QString> node_lines;
+    // 跳过 "*Node" 这一行
+    QString line = stream.readLine().trimmed();
+    // 继续往下读，直到遇到下一个 * 关键字 或 文件结束
     while (!stream.atEnd()) {
         qint64 pos_before = stream.pos();
-        line = stream.readLine().trimmed();
-
-        // 如果下一段开始了（*Part, *Assembly, *Instance等等），需要回退
-        if (line.startsWith("*Part", Qt::CaseInsensitive) || line.startsWith("*Assembly", Qt::CaseInsensitive)
-            || line.startsWith("*Instance", Qt::CaseInsensitive)) {
+        QString l = stream.readLine();
+        QString trimmed = l.trimmed();
+        if (trimmed.startsWith("*", Qt::CaseInsensitive)) {
+            // 回退
             stream.seek(pos_before);
             break;
         }
-
-        // 使用正则表达式解析各种关键词
-        QRegularExpression re_job(R"(Job name:\s*([^\s]+))");
-        QRegularExpression re_model(R"(Model name:\s*([^\s]+))");
-        QRegularExpression re_generated(R"(Generated by:\s*([^\s]+)\s*(\d{4}-\d{2}-\d{2})?)");
-
-        auto match_job = re_job.match(line);
-        if (match_job.hasMatch()) {
-            model_info_.job_name = match_job.captured(1);
-        }
-        auto match_model = re_model.match(line);
-        if (match_model.hasMatch()) {
-            model_info_.model_name = match_model.captured(1);
-        }
-        auto match_generated = re_generated.match(line);
-        if (match_generated.hasMatch()) {
-            model_info_.generated_by = match_generated.captured(1);
-            if (!match_generated.captured(2).isEmpty()) {
-                model_info_.created_time = QDateTime::fromString(match_generated.captured(2), "yyyy-MM-dd");
-            } else {
-                model_info_.created_time = QDateTime::currentDateTime();
-            }
-        }
-
-        // 如果遇到 *Preprint
-        if (line.startsWith("*Preprint", Qt::CaseInsensitive)) {
-            // 简单解析
-            QStringList settings_list = line.section(',', 1).split(',');
-            for (const QString& setting : settings_list) {
-                QStringList kv = setting.split('=');
-                if (kv.size() == 2) {
-                    QString key = kv[0].trimmed();
-                    QString value = kv[1].trimmed();
-                    model_info_.preprint_settings[key] = value;
-                }
-            }
+        if (!trimmed.isEmpty()) {
+            node_lines.push_back(trimmed);
         }
     }
-}
 
-void InpReader::processNodes(QTextStream& stream, vtkPoints* points, QHash<int, vtkIdType>& node_map, const double offset[3])
-{
-    // 说明：此函数在开始调用时，外部已判断到下一行是节点数据或空行
-    // 因此我们需要继续往下读，直到遇到新的关键字 (* 开头) 或文件结束
-    while (!stream.atEnd()) {
-        qint64 pos_before = stream.pos();
-        QString line = stream.readLine().trimmed();
-        Logging::info("processNodes: line = {}", line);
-        // 碰到下一个段落关键字，回退流，跳出
-        if (line.startsWith("*", Qt::CaseInsensitive)) {
-            stream.seek(pos_before);
-            break;
-        }
-        if (line.isEmpty()) {
-            continue;
-        }
+    if (node_lines.empty()) {
+        return;
+    }
 
-        // 解析节点行: id, x, y, z(可选)
-        QStringList parts = line.split(',', Qt::SkipEmptyParts);
+    // 先创建一个容器，用于存储解析后的 (id, x, y, z)
+    // 注意如果 node id 很大且不连续，你还是需要用 hash
+    // 此处演示仅存放坐标和 ID 的 vector，后续再做映射
+    struct node_record {
+        int id;
+        double x, y, z;
+    };
+    std::vector<node_record> nodes;
+    nodes.reserve(node_lines.size());
+
+    // 逐行解析
+    for (auto& ln : node_lines) {
+        // 用 indexOf(',', ...) + mid() 或者 QString::splitRef() 可以略微快一点
+        // 这里演示就简单写 split(',')
+        QStringList parts = ln.split(',', Qt::SkipEmptyParts);
         if (parts.size() < 3) {
             continue;
         }
-
         bool ok = false;
         int node_id = parts[0].toInt(&ok);
         if (!ok) {
             continue;
         }
-
-        double x = parts[1].toDouble(&ok);
-        if (!ok) {
-            continue;
-        }
-        double y = parts[2].toDouble(&ok);
-        if (!ok) {
-            continue;
-        }
-
-        double z = 0.0;
+        double xx = parts[1].toDouble(&ok);
+        if (!ok)
+            xx = 0.0;
+        double yy = parts[2].toDouble(&ok);
+        if (!ok)
+            yy = 0.0;
+        double zz = 0.0;
         if (parts.size() > 3) {
-            z = parts[3].toDouble(&ok);
-            if (!ok) {
-                z = 0.0;
-            }
+            zz = parts[3].toDouble(&ok);
+            if (!ok)
+                zz = 0.0;
         }
+        nodes.push_back({ node_id, xx + offset[0], yy + offset[1], zz + offset[2] });
+    }
 
-        // 带上 offset 偏移
-        vtkIdType vt_id = points->InsertNextPoint(x + offset[0], y + offset[1], z + offset[2]);
-        node_map[node_id] = vt_id;
+    // 现在我们有了所有节点数据，可以一次性创建 vtkPoints
+    auto points = vtkSmartPointer<vtkPoints>::New();
+    points->SetNumberOfPoints(static_cast<vtkIdType>(nodes.size()));
+
+    // 把坐标填进去
+    for (vtkIdType i = 0; i < static_cast<vtkIdType>(nodes.size()); ++i) {
+        points->SetPoint(i, nodes[i].x, nodes[i].y, nodes[i].z);
+    }
+
+    // 把 grid 的 points 设置好
+    grid->SetPoints(points);
+
+    // 维护 id -> vtkId 的映射
+    // 这里假设 nodes 各不重复
+    // 如果 inp 文件里有重复id，需要额外去重判断
+    for (vtkIdType i = 0; i < static_cast<vtkIdType>(nodes.size()); ++i) {
+        node_map[nodes[i].id] = i;
     }
 }
 
-void InpReader::processElements(QTextStream& stream, vtkUnstructuredGrid* grid, const QHash<int, vtkIdType>& node_map)
+//------------------------------------------------------
+// 批量解析单元 (Elements)
+// 假设三角形为主，若有其他类型需自定义
+//------------------------------------------------------
+void InpReader::processElementsBulk(QTextStream& stream, vtkSmartPointer<vtkUnstructuredGrid>& grid, const QHash<int, vtkIdType>& node_map)
 {
-    // 这里假设单元全是三角形，若有其他类型需自行扩展
-    auto cells = vtkSmartPointer<vtkCellArray>::New();
+    // 跳过 "*Element" 这一行
+    QString line = stream.readLine().trimmed();
+
+    // 临时存储所有单元行
+    std::vector<QString> elem_lines;
 
     while (!stream.atEnd()) {
         qint64 pos_before = stream.pos();
-        QString line = stream.readLine().trimmed();
-
-        // 碰到下一个段落关键字则回退
-        if (line.startsWith("*", Qt::CaseInsensitive)) {
+        QString l = stream.readLine();
+        QString trimmed = l.trimmed();
+        if (trimmed.startsWith("*", Qt::CaseInsensitive)) {
             stream.seek(pos_before);
             break;
         }
-        if (line.isEmpty()) {
-            continue;
+        if (!trimmed.isEmpty()) {
+            elem_lines.push_back(trimmed);
         }
+    }
+    if (elem_lines.empty()) {
+        return;
+    }
 
-        // 解析三角形单元: element_id, n1, n2, n3
-        // （对于Abaqus里的CPS3等三节点元素）
-        QStringList parts = line.split(',', Qt::SkipEmptyParts);
+    // 本例只针对三角单元 (element_id, n1, n2, n3)
+    // 先分配一个 cellarray
+    auto cells = vtkSmartPointer<vtkCellArray>::New();
+    cells->AllocateEstimate(static_cast<vtkIdType>(elem_lines.size()), 3);
+
+    for (auto& ln : elem_lines) {
+        // 把逗号后面的节点拿到
+        // ln 形如: "  101, 10, 11, 12" => element_id=101, 节点=10,11,12
+        QStringList parts = ln.split(',', Qt::SkipEmptyParts);
         if (parts.size() < 4) {
             continue;
         }
-
-        // parts[0] 是单元id，后面的才是节点号
-        // 这里仅简单取前三个作为三角形
-        auto triangle = vtkSmartPointer<vtkTriangle>::New();
-        for (int i = 0; i < 3; ++i) {
-            int node_index = parts[i + 1].toInt(); // i+1 位置才是节点号
-            auto it = node_map.find(node_index);
-            if (it != node_map.end()) {
-                triangle->GetPointIds()->SetId(i, it.value());
-            }
+        // parts[0] 是单元ID, 1..3是节点
+        // 这里只简单取前三个节点构三角形
+        int n1 = parts[1].toInt();
+        int n2 = parts[2].toInt();
+        int n3 = parts[3].toInt();
+        // 查找映射
+        auto it1 = node_map.find(n1);
+        auto it2 = node_map.find(n2);
+        auto it3 = node_map.find(n3);
+        if (it1 == node_map.end() || it2 == node_map.end() || it3 == node_map.end()) {
+            continue;
         }
 
-        cells->InsertNextCell(triangle);
+        vtkIdType pts[3] = { it1.value(), it2.value(), it3.value() };
+        cells->InsertNextCell(3, pts);
     }
 
-    // 注意：在外部已 setPoints(part_points) 了，
-    // 这里不需要再重复 setPoints(grid->GetPoints())。
+    // 设置到 grid
     grid->SetCells(VTK_TRIANGLE, cells);
 }
 
+//------------------------------------------------------
+// 解析 *Heading 区域
+// 若量不大，也无所谓性能
+//------------------------------------------------------
+void InpReader::processHeading(QTextStream& stream)
+{
+    while (!stream.atEnd()) {
+        qint64 pos_before = stream.pos();
+        QString line = stream.readLine().trimmed();
+        if (line.startsWith("*Part", Qt::CaseInsensitive) || line.startsWith("*Assembly", Qt::CaseInsensitive)
+            || line.startsWith("*Instance", Qt::CaseInsensitive) || line.startsWith("*Node", Qt::CaseInsensitive)
+            || line.startsWith("*Element", Qt::CaseInsensitive)) {
+            stream.seek(pos_before);
+            break;
+        }
+        // 尝试手动寻找 job / model / generated 等关键字
+        if (line.contains("Job name:", Qt::CaseInsensitive)) {
+            // 这里就随便写个例子，别再用QRegularExpression匹配整行了
+            int idx = line.indexOf("Job name:", 0, Qt::CaseInsensitive);
+            if (idx >= 0) {
+                QString rest = line.mid(idx + 9).trimmed();
+                model_info_.job_name = rest.split(' ', Qt::SkipEmptyParts).value(0);
+            }
+        }
+        // ... 同理对 Model name / Generated by 等做简单解析
+        if (line.startsWith("*Preprint", Qt::CaseInsensitive)) {
+            // 这里可以不做高性能要求，因为preprint一般就一两行
+            QStringList settings_list = line.section(',', 1).split(',');
+            for (const QString& setting : settings_list) {
+                QStringList kv = setting.split('=');
+                if (kv.size() == 2) {
+                    model_info_.preprint_settings[kv[0].trimmed()] = kv[1].trimmed();
+                }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------
+// 解析 *Assembly, 主要提取 *Instance
+//------------------------------------------------------
+void InpReader::processAssembly(QTextStream& stream)
+{
+    while (!stream.atEnd()) {
+        QString line = stream.readLine().trimmed();
+
+        if (line.startsWith("*End Assembly", Qt::CaseInsensitive)) {
+            break;
+        }
+        if (line.startsWith("*Instance", Qt::CaseInsensitive)) {
+            instance_info_t inst;
+            inst.transform[0] = inst.transform[1] = inst.transform[2] = 0.0;
+
+            // 解析 name=xxx, part=xxx
+            QString instance_name = line.section("name=", 1).section(',', 0, 0).trimmed();
+            inst.part_name = line.section("part=", 1).section(',', 0, 0).trimmed();
+
+            // 看下一行是否有平移数字
+            qint64 pos_before2 = stream.pos();
+            if (!stream.atEnd()) {
+                QString transform_line = stream.readLine().trimmed();
+                if (transform_line.startsWith("*", Qt::CaseInsensitive)) {
+                    // 没有平移
+                    stream.seek(pos_before2);
+                } else {
+                    parseTransform(transform_line, inst.transform);
+                }
+            }
+            instances_map_[instance_name] = inst;
+        }
+        // 其他情况，就继续
+    }
+}
+
+//------------------------------------------------------
+// 简易解析平移
+//------------------------------------------------------
 void InpReader::parseTransform(const QString& line, double transform[3])
 {
-    // 简单解析: 假设 line 里可能含逗号或空格的数字，如 "10.0, 5.0, 2.0"
-    // 先按逗号切，再去掉空格，如果解析不到3个就默认0
-    // 也可能 line 里有其他信息 (name=xxx, part=yyy)，需要你自己做更严谨的区分
+    // 全置 0
+    transform[0] = transform[1] = transform[2] = 0.0;
+
+    // 把可能的 "name=..., part=..." 去掉
     QString cleaned = line;
-    // 如果带有 name=xxx、part=xxx，就把它们去掉
-    // 这里仅作示例，不一定适用于所有 inp 格式
     cleaned.remove(QRegularExpression("name=[^,]+", QRegularExpression::CaseInsensitiveOption));
     cleaned.remove(QRegularExpression("part=[^,]+", QRegularExpression::CaseInsensitiveOption));
-
-    // 去掉 "*Instance" 关键字
     cleaned.remove("*Instance", Qt::CaseInsensitive);
 
     QStringList tokens = cleaned.split(',', Qt::SkipEmptyParts);
-    // 默认 0
-    transform[0] = transform[1] = transform[2] = 0.0;
-
     int idx = 0;
-    for (QString& tk : tokens) {
+    for (auto& tk : tokens) {
         tk = tk.trimmed();
-        if (tk.isEmpty()) {
+        if (tk.isEmpty())
             continue;
-        }
         bool ok = false;
         double val = tk.toDouble(&ok);
         if (ok) {
@@ -265,57 +370,11 @@ void InpReader::parseTransform(const QString& line, double transform[3])
     }
 }
 
-void InpReader::processAssembly(QTextStream& stream)
-{
-    QString line;
-    while (!stream.atEnd()) {
-        qint64 pos_before = stream.pos();
-        line = stream.readLine().trimmed();
-
-        if (line.startsWith("*End Assembly", Qt::CaseInsensitive)) {
-            break;
-        }
-        if (line.isEmpty()) {
-            continue;
-        }
-
-        // 如果出现了 *Instance, name=xxx, part=yyy
-        if (line.startsWith("*Instance", Qt::CaseInsensitive)) {
-            instance_info_t instance_info;
-            // 先解析 name=xxx
-            instance_info.part_name.clear();
-            instance_info.transform[0] = 0.0;
-            instance_info.transform[1] = 0.0;
-            instance_info.transform[2] = 0.0;
-
-            // 从这行拿到 instance_name 和 part_name
-            QString instance_name = line.section("name=", 1).section(',', 0, 0).trimmed();
-            instance_info.part_name = line.section("part=", 1).section(',', 0, 0).trimmed();
-
-            // 再读下一行看是否有平移参数
-            qint64 pos_before_params = stream.pos();
-            if (!stream.atEnd()) {
-                line = stream.readLine().trimmed();
-                // 如果这一行还是 * 开头，就说明没有显式的变换参数
-                if (line.startsWith("*", Qt::CaseInsensitive)) {
-                    // 回退
-                    stream.seek(pos_before_params);
-                } else {
-                    // 尝试解析平移
-                    parseTransform(line, instance_info.transform);
-                }
-            }
-            // 存到实例表里
-            instances_map_[instance_name] = instance_info;
-        } else {
-            // 未匹配到 *Instance，就继续读
-        }
-    }
-}
-
+//------------------------------------------------------
+// 合并网格：对 part_grid 做平移后 append 到 main_grid
+//------------------------------------------------------
 void InpReader::mergeGrids(vtkUnstructuredGrid* main_grid, vtkUnstructuredGrid* part_grid, const double transform[3])
 {
-    // 先对 part_grid 做一个平移变换
     vtkNew<vtkTransform> translation;
     translation->Translate(transform[0], transform[1], transform[2]);
 
@@ -324,13 +383,11 @@ void InpReader::mergeGrids(vtkUnstructuredGrid* main_grid, vtkUnstructuredGrid* 
     transform_filter->SetTransform(translation);
     transform_filter->Update();
 
-    // 然后使用 append_filter 合并到 main_grid
     vtkNew<vtkAppendFilter> append_filter;
     append_filter->MergePointsOn();
     append_filter->AddInputData(main_grid);
     append_filter->AddInputData(transform_filter->GetOutput());
     append_filter->Update();
 
-    // 最终更新 main_grid
     main_grid->DeepCopy(append_filter->GetOutput());
 }

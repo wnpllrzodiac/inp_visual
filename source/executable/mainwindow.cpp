@@ -26,10 +26,16 @@ void MainWindow::initUI()
     QMenuBar* menu_bar = new QMenuBar(this);
     QMenu* file_menu = menu_bar->addMenu("");
 
-    open_action_ = new QAction(this);
+    open_abaqus_action_ = new QAction(this);
+    open_gmsh_action_ = new QAction(this);
+    open_vtu_action_ = new QAction(this);
+    open_vtk_action_ = new QAction(this);
     save_action_ = new QAction(this);
 
-    file_menu->addAction(open_action_);
+    file_menu->addAction(open_abaqus_action_);
+    file_menu->addAction(open_gmsh_action_);
+    file_menu->addAction(open_vtu_action_);
+    file_menu->addAction(open_vtk_action_);
     file_menu->addAction(save_action_);
 
     setMenuBar(menu_bar);
@@ -57,7 +63,10 @@ void MainWindow::initUI()
 
 void MainWindow::setupConnections()
 {
-    connect(open_action_, &QAction::triggered, this, &MainWindow::openInpFile);
+    connect(open_abaqus_action_, &QAction::triggered, this, &MainWindow::openAbaqusFile);
+    connect(open_gmsh_action_, &QAction::triggered, this, &MainWindow::openGmshFile);
+    connect(open_vtu_action_, &QAction::triggered, this, &MainWindow::openVtuFile);
+    connect(open_vtk_action_, &QAction::triggered, this, &MainWindow::openVtkFile);
     connect(save_action_, &QAction::triggered, this, &MainWindow::saveInpFile);
 }
 
@@ -65,24 +74,52 @@ void MainWindow::retranslateUI()
 {
     setWindowTitle(tr("INP文件可视化分析器"));
     menuBar()->findChild<QMenu*>("")->setTitle(tr("文件(&F)"));
-    open_action_->setText(tr("打开(&O)"));
+    open_abaqus_action_->setText(tr("打开ABAQUS文件(&O)"));
+    open_gmsh_action_->setText(tr("打开Gmsh文件(&O)"));
+    open_vtu_action_->setText(tr("打开VTU文件(&O)"));
+    open_vtk_action_->setText(tr("打开VTK文件(&O)"));
     save_action_->setText(tr("另存为(&S)"));
 }
 
-void MainWindow::openInpFile()
+void MainWindow::openAbaqusFile()
 {
-    QString fileName = QFileDialog::getOpenFileName(this, tr("打开INP文件"), "", tr("ABAQUS文件 (*.inp)"));
+    QString fileName = QFileDialog::getOpenFileName(this, tr("打开ABAQUS文件"), "", tr("ABAQUS文件 (*.inp)"));
 
     if (!fileName.isEmpty()) {
-        vtkWidget_->openInpFile(fileName);
+        vtkWidget_->openAbaqusFile(fileName);
+    }
+}
+
+void MainWindow::openGmshFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("打开Gmsh文件"), "", tr("Gmsh文件 (*.inp)"));
+
+    if (!fileName.isEmpty()) {
+        vtkWidget_->openGmshFile(fileName);
+    }
+}
+
+void MainWindow::openVtuFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("打开VTU文件"), "", tr("VTU文件 (*.vtu)"));
+
+    if (!fileName.isEmpty()) {
+        vtkWidget_->openVtuFile(fileName);
+    }
+}
+
+void MainWindow::openVtkFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("打开VTK文件"), "", tr("VTK文件 (*.vtk)"));
+
+    if (!fileName.isEmpty()) {
+        vtkWidget_->openVtkFile(fileName);
     }
 }
 
 void MainWindow::saveInpFile()
 {
-    QString fileName = QFileDialog::getSaveFileName(this, tr("保存INP文件"), "", tr("ABAQUS文件 (*.inp)"));
+    QString fileName = QFileDialog::getSaveFileName(this, tr("保存INP文件"), "", tr("INP文件 (*.inp)"));
 
-    if (!fileName.isEmpty()) {
-        // 这里添加保存文件的逻辑
-    }
+    if (!fileName.isEmpty()) { }
 }
