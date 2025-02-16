@@ -39,8 +39,15 @@ void CellPickInteractorStyle::OnLeftButtonDown()
                 vtkCell *cell = grid->GetCell(cellId);
                 if (cell)
                 {
-                    emitter_->cellSelected(static_cast<size_t>(cellId), clickPos[0], clickPos[1]);
-
+                    if (emitter_)
+                    {
+                        emitter_->cellSelected(static_cast<size_t>(cellId), clickPos[0], clickPos[1]);
+                    }
+                    if (highlight_actor_)
+                    {
+                        renderer->RemoveActor(highlight_actor_);
+                        highlight_actor_ = nullptr;
+                    }
                     // 创建一个新的UnstructuredGrid，只包含选中的单元格
                     vtkSmartPointer<vtkUnstructuredGrid> singleCellGrid = vtkSmartPointer<vtkUnstructuredGrid>::New();
                     singleCellGrid->Allocate(1);
@@ -53,13 +60,13 @@ void CellPickInteractorStyle::OnLeftButtonDown()
                     vtkSmartPointer<vtkDataSetMapper> mapper = vtkSmartPointer<vtkDataSetMapper>::New();
                     mapper->SetInputData(singleCellGrid);
 
-                    vtkSmartPointer<vtkActor> actor = vtkSmartPointer<vtkActor>::New();
-                    actor->SetMapper(mapper);
-                    actor->GetProperty()->SetColor(0, 1, 0); // 设置高亮颜色为绿色
-                    actor->GetProperty()->SetEdgeVisibility(true);
-                    actor->GetProperty()->SetLineWidth(2);
+                    highlight_actor_ = vtkSmartPointer<vtkActor>::New();
+                    highlight_actor_->SetMapper(mapper);
+                    highlight_actor_->GetProperty()->SetColor(0, 1, 0); // 设置高亮颜色为绿色
+                    highlight_actor_->GetProperty()->SetEdgeVisibility(true);
+                    highlight_actor_->GetProperty()->SetLineWidth(2);
 
-                    renderer->AddActor(actor);
+                    renderer->AddActor(highlight_actor_);
                     renderer->GetRenderWindow()->Render();
                 }
             }
@@ -67,7 +74,7 @@ void CellPickInteractorStyle::OnLeftButtonDown()
     }
     else
     {
-        std::cerr << "Error: No renderer available for picking." << std::endl;
+        Logging::error("Error: No renderer available for picking.");
     }
 
     vtkInteractorStyleRubberBand2D::OnLeftButtonDown();
@@ -77,8 +84,9 @@ void CellPickInteractorStyle::setEmitter(SignalEmitter *emitter) { emitter_ = em
 
 void PointPickInteractorStyle::OnLeftButtonDown()
 {
+    const double epsilon = 0.005;
     vtkSmartPointer<vtkPointPicker> picker = vtkSmartPointer<vtkPointPicker>::New();
-    picker->SetTolerance(0.01);
+    picker->SetTolerance(epsilon);
 
     int *clickPos = this->GetInteractor()->GetEventPosition();
     vtkRenderer *renderer = this->GetDefaultRenderer();
@@ -92,19 +100,19 @@ void PointPickInteractorStyle::OnLeftButtonDown()
             vtkSmartPointer<vtkUnstructuredGrid> grid = vtkUnstructuredGrid::SafeDownCast(picker->GetDataSet());
             auto point = grid->GetPoint(pointId);
 
-            // 检查点击的点是否与高亮的Actor位置相同
-            if (this->highlightedActor_)
+            bool isSamePoint = highlight_actor_ && std::abs(highlight_actor_->GetPosition()[0] - point[0]) < epsilon &&
+                               std::abs(highlight_actor_->GetPosition()[1] - point[1]) < epsilon &&
+                               std::abs(highlight_actor_->GetPosition()[2] - point[2]) < epsilon;
+
+            if (isSamePoint)
             {
-                double highlightedPoint[3];
-                this->highlightedActor_->GetPosition(highlightedPoint);
-                if (highlightedPoint[0] == point[0] && highlightedPoint[1] == point[1] &&
-                    highlightedPoint[2] == point[2])
-                {
-                    // 如果点击的是高亮的Actor，直接返回
-                    return;
-                }
-                // 移除之前高亮的Actor
-                renderer->RemoveActor(this->highlightedActor_);
+                return;
+            }
+
+            if (highlight_actor_)
+            {
+                renderer->RemoveActor(highlight_actor_);
+                highlight_actor_ = nullptr;
             }
 
             // 高亮显示选中的点
@@ -116,18 +124,18 @@ void PointPickInteractorStyle::OnLeftButtonDown()
             vtkSmartPointer<vtkPolyDataMapper> mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
             mapper->SetInputConnection(sphereSource->GetOutputPort());
 
-            this->highlightedActor_ = vtkSmartPointer<vtkActor>::New();
-            this->highlightedActor_->SetMapper(mapper);
-            this->highlightedActor_->GetProperty()->SetColor(1, 0, 0); // 设置高亮颜色为红色
+            highlight_actor_ = vtkSmartPointer<vtkActor>::New();
+            highlight_actor_->SetMapper(mapper);
+            highlight_actor_->GetProperty()->SetColor(1, 0, 0); // 设置高亮颜色为红色
 
-            renderer->AddActor(this->highlightedActor_);
+            renderer->AddActor(highlight_actor_);
             renderer->GetRenderWindow()->Render();
             emitter_->pointSelected(static_cast<size_t>(pointId), clickPos[0], clickPos[1]);
         }
     }
     else
     {
-        std::cerr << "Error: No renderer available for picking." << std::endl;
+        Logging::error("Error: No renderer available for picking.");
     }
 
     vtkInteractorStyleRubberBand2D::OnLeftButtonDown();

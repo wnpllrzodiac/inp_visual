@@ -20,6 +20,7 @@ public:
 
 private:
     SignalEmitter *emitter_ = nullptr;
+    vtkSmartPointer<vtkActor> highlight_actor_;
 };
 
 class PointPickInteractorStyle : public vtkInteractorStyleRubberBand2D
@@ -33,7 +34,7 @@ public:
 
 private:
     SignalEmitter *emitter_ = nullptr;
-    vtkSmartPointer<vtkActor> highlightedActor_;
+    vtkSmartPointer<vtkActor> highlight_actor_;
 };
 
 #endif // PICKINTERACTORSTYLE_H

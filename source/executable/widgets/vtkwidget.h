@@ -41,6 +41,8 @@ public slots:
 private slots:
     void onCellSelected(size_t cellId, int x, int y);
     void onPointSelected(size_t pointId, int x, int y);
+    void onChangeCellColor();
+    void onChangePointColor();
     void switchInteractorStyle();
 
 private:
@@ -48,6 +50,8 @@ private:
     void initUi();
     void setupConnections();
     void initVtk();
+    vtkSmartPointer<vtkIntArray> generateCellColors(const QMap<QString, std::vector<int>> &elset_sets);
+    vtkSmartPointer<vtkIntArray> generatePointColors(const QMap<QString, std::vector<int>> &nset_sets);
 
 private:
     QVTKOpenGLNativeWidget *vtk_widget_{};

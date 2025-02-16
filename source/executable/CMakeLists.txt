@@ -38,8 +38,8 @@ if(WIN32)
   endif()
 endif()
 
+add_subdirectory(model)
 add_subdirectory(widgets)
-add_subdirectory(api)
 
 add_dependencies(${TARGET_NAME} RuntimeResources)
 

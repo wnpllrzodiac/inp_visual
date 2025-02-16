@@ -15,86 +15,93 @@
 #include <vtkTriangle.h>
 #include <vtkUnstructuredGridReader.h>
 
-bool InpReader::parseGmsh(const QString& file_name)
+bool InpReader::parseGmsh(const QString &file_name)
 {
-
+    node_sets_.clear();
+    element_sets_.clear();
     {
         QFile file(file_name);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
             return false;
         }
 
         QTextStream stream(&file);
         QString line;
 
-        while (!stream.atEnd()) {
+        while (!stream.atEnd())
+        {
             // auto pos_before = stream.pos();
             line = stream.readLine();
             if (line.isEmpty())
                 continue;
 
-            if (line.startsWith("*NSET", Qt::CaseInsensitive)) {
+            if (line.startsWith("*NSET", Qt::CaseInsensitive))
+            {
                 // 处理节点集
                 processNodeSet(line, stream);
-
-            } else if (line.startsWith("*ELSET", Qt::CaseInsensitive)) {
+            }
+            else if (line.startsWith("*ELSET", Qt::CaseInsensitive))
+            {
                 // 处理单元集
                 processElementSet(line, stream);
             }
         }
     }
-    return praseModel(file_name);
+    return parseModel(file_name);
 }
 
-bool InpReader::parseAbaqus(const QString& file_name)
+bool InpReader::parseAbaqus(const QString &file_name)
 
 {
     main_grid_ = vtkSmartPointer<vtkUnstructuredGrid>::New();
     return true;
 }
 
-vtkSmartPointer<vtkUnstructuredGrid> InpReader::getMainGrid() const
-{
-    return main_grid_;
-}
+vtkSmartPointer<vtkUnstructuredGrid> InpReader::getMainGrid() const { return main_grid_; }
 
-QMap<QString, std::vector<int>> InpReader::getNodeSets() const
-{
-    return node_sets_;
-}
+QMap<QString, std::vector<int>> InpReader::getNodeSets() const { return node_sets_; }
 
-QMap<QString, std::vector<int>> InpReader::getElementSets() const
-{
-    return element_sets_;
-}
+QMap<QString, std::vector<int>> InpReader::getElementSets() const { return element_sets_; }
 
 //------------------------------------------------------
 // 处理节点集 (*NSET)
 //------------------------------------------------------
-void InpReader::processNodeSet(const QString& line_header, QTextStream& stream)
+void InpReader::processNodeSet(const QString &line_header, QTextStream &stream)
 
 {
     // 解析NSET名称
     QString set_name;
-    if (line_header.contains("NSET=", Qt::CaseInsensitive)) {
+    if (line_header.contains("NSET=", Qt::CaseInsensitive))
+    {
         set_name = line_header.section("NSET=", 1).section(',', 0, 0).trimmed();
-    } else {
+    }
+    else
+    {
         return; // 没有找到NSET名称,退出
     }
 
     std::vector<int> node_ids;
 
-    while (!stream.atEnd()) {
-        QString line = stream.readLine().trimmed();
+    while (!stream.atEnd())
+    {
+        QString line = stream.readLine();
         if (line.startsWith("*"))
+        {
+            // 重新定位到这一行起始
+            stream.seek(stream.pos() - line.size() - 2);
             break;
+        }
+        line = line.trimmed();
 
         // 解析这一行的节点ID
         QStringList ids = line.split(',', Qt::SkipEmptyParts);
-        for (const QString& id_str : ids) {
+        for (const QString &id_str : ids)
+        {
             bool ok;
             int id = id_str.trimmed().toInt(&ok);
-            if (ok) {
+            if (ok)
+            {
                 node_ids.push_back(id);
             }
         }
@@ -107,29 +114,40 @@ void InpReader::processNodeSet(const QString& line_header, QTextStream& stream)
 //------------------------------------------------------
 // 处理单元集 (*ELSET)
 //------------------------------------------------------
-void InpReader::processElementSet(const QString& line_header, QTextStream& stream)
+void InpReader::processElementSet(const QString &line_header, QTextStream &stream)
 {
     // 解析ELSET名称
     QString set_name;
-    if (line_header.contains("ELSET=", Qt::CaseInsensitive)) {
+    if (line_header.contains("ELSET=", Qt::CaseInsensitive))
+    {
         set_name = line_header.section("ELSET=", 1).section(',', 0, 0).trimmed();
-    } else {
+    }
+    else
+    {
         return; // 没有找到ELSET名称,退出
     }
 
     std::vector<int> element_ids;
 
-    while (!stream.atEnd()) {
-        QString line = stream.readLine().trimmed();
+    while (!stream.atEnd())
+    {
+        QString line = stream.readLine();
         if (line.startsWith("*"))
+        {
+            // 重新定位到这一行起始
+            stream.seek(stream.pos() - line.size() - 2);
             break;
+        }
+        line = line.trimmed();
 
         // 解析这一行的单元ID
         QStringList ids = line.split(',', Qt::SkipEmptyParts);
-        for (const QString& id_str : ids) {
+        for (const QString &id_str : ids)
+        {
             bool ok;
             int id = id_str.trimmed().toInt(&ok);
-            if (ok) {
+            if (ok)
+            {
                 element_ids.push_back(id);
             }
         }
@@ -139,14 +157,15 @@ void InpReader::processElementSet(const QString& line_header, QTextStream& strea
     element_sets_[set_name] = element_ids;
 }
 
-bool InpReader::praseModel(const QString& file_name)
+bool InpReader::parseModel(const QString &file_name)
 {
     // 创建临时文件
     QString temp_file = file_name + ".vtk";
     QFile::copy(file_name, temp_file);
 
     auto meshio_path = QCoreApplication::applicationDirPath() + "/meshio.exe";
-    if (!QFile::exists(meshio_path)) {
+    if (!QFile::exists(meshio_path))
+    {
         return false;
     }
 
@@ -156,20 +175,22 @@ bool InpReader::praseModel(const QString& file_name)
     int exit_code = QProcess::execute(meshio_path, arguments);
 
     // 检查进程是否成功执行
-    if (exit_code != 0) {
+    if (exit_code != 0)
+    {
         // 转换失败，清理临时文件
         QFile::remove(temp_file);
         return false;
     }
 
-    if (!QFile::exists(temp_file)) {
+    if (!QFile::exists(temp_file))
+    {
         return false;
     }
 
     return readConvertedVTK(temp_file);
 }
 
-bool InpReader::readConvertedVTK(const QString& file_name)
+bool InpReader::readConvertedVTK(const QString &file_name)
 
 {
     // 读取转换后的vtk文件
