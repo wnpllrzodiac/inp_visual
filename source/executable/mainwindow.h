@@ -14,9 +14,6 @@ public:
 public slots:
     void openAbaqusFile();
     void openGmshFile();
-    void openVtuFile();
-    void openVtkFile();
-    void saveInpFile();
 
 private:
     void initUI();

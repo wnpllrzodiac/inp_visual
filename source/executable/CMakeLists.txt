@@ -4,7 +4,6 @@ cmake_minimum_required(VERSION 3.23.0 FATAL_ERROR)
 
 set(TARGET_NAME ${PROJECT_NAME})
 
-
 find_package(QT NAMES Qt6 Qt5 CONFIG REQUIRED COMPONENTS Widgets Network
                                                          Concurrent)
 find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED COMPONENTS Widgets Network
@@ -46,5 +45,3 @@ add_dependencies(${TARGET_NAME} RuntimeResources)
 
 include(GNUInstallDirs)
 install(TARGETS ${TARGET_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-

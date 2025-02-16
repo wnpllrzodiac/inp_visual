@@ -1,7 +1,7 @@
 #include "configwidget.h"
 
-ConfigWidget::ConfigWidget(QWidget* parent)
-    : QWidget(parent)
+ConfigWidget::ConfigWidget(QWidget *parent)
+: QWidget(parent)
 {
     initUi();
     setupConnections();
@@ -37,6 +37,4 @@ void ConfigWidget::initUi()
     setLayout(layout);
 }
 
-void ConfigWidget::setupConnections()
-{
-}
+void ConfigWidget::setupConnections() { }

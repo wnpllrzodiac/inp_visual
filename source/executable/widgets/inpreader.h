@@ -5,6 +5,7 @@
 #include <QMap>
 #include <QString>
 #include <QTextStream>
+#include <vector>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 
@@ -26,32 +27,34 @@ public:
     InpReader() = default;
     ~InpReader() = default;
 
-    // 解析inp文件，返回合并后的 vtkUnstructuredGrid
-    vtkSmartPointer<vtkUnstructuredGrid> parseAbaqus(const QString& file_name);
+    // 解析inp文件
+    bool parseAbaqus(const QString& file_name);
 
-    // 解析inp文件，返回合并后的 vtkUnstructuredGrid
-    vtkSmartPointer<vtkUnstructuredGrid> parseGmsh(const QString& file_name);
+    // 解析inp文件
+    bool parseGmsh(const QString& file_name);
 
-private:
-    // 核心解析函数
-    void processHeading(QTextStream& stream);
-    void processAssembly(QTextStream& stream);
+    vtkSmartPointer<vtkUnstructuredGrid> getMainGrid() const;
 
-    // 批量解析 Node
-    void processNodesBulk(
-        QTextStream& stream, vtkSmartPointer<vtkUnstructuredGrid>& grid, QHash<int, vtkIdType>& node_map, const double offset[3]);
+    QMap<QString, std::vector<int>> getNodeSets() const;
 
-    // 批量解析 Element
-    void processElementsBulk(QTextStream& stream, vtkSmartPointer<vtkUnstructuredGrid>& grid, const QHash<int, vtkIdType>& node_map);
-
-    // 解析简单平移
-    void parseTransform(const QString& line, double transform[3]);
-
-    // 合并网格
-    void mergeGrids(vtkUnstructuredGrid* main_grid, vtkUnstructuredGrid* part_grid, const double transform[3]);
+    QMap<QString, std::vector<int>> getElementSets() const;
 
 private:
-    ModelInfo model_info_;
-    QHash<QString, vtkSmartPointer<vtkUnstructuredGrid>> parts_map_;
-    QHash<QString, instance_info_t> instances_map_;
+    // 处理节点集 (*NSET)
+    void processNodeSet(const QString& line_header, QTextStream& stream);
+
+    // 处理单元集 (*ELSET)
+    void processElementSet(const QString& line_header, QTextStream& stream);
+
+    // 用meshio转换inp文件
+    bool praseModel(const QString& file_name);
+
+    // 读取转换后的vtk文件
+    bool readConvertedVTK(const QString& file_name);
+
+private:
+    ModelInfo model_info_ {};
+    vtkSmartPointer<vtkUnstructuredGrid> main_grid_ = nullptr;
+    QMap<QString, std::vector<int>> node_sets_; // 存储节点集
+    QMap<QString, std::vector<int>> element_sets_; // 存储单元集
 };
