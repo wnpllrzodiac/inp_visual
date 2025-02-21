@@ -3,23 +3,23 @@
 
 #include <QLabel>
 #include <QLineEdit>
+#include <QTabWidget>
 #include <QVBoxLayout>
-#include <QWidget>
 
-
-class ConfigWidget : public QWidget {
+class ConfigWidget : public QTabWidget
+{
     Q_OBJECT
 public:
-    explicit ConfigWidget(QWidget* parent = nullptr);
+    explicit ConfigWidget(QWidget *parent = nullptr);
 
 private:
     void initUi();
     void setupConnections();
 
 private:
-    QLineEdit* lengthUnitEdit;
-    QLineEdit* massUnitEdit;
-    QLineEdit* timeUnitEdit;
+    QLineEdit *lengthUnitEdit;
+    QLineEdit *massUnitEdit;
+    QLineEdit *timeUnitEdit;
 };
 
 #endif // CONFIGWIDGET_H

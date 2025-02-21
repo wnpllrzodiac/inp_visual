@@ -34,6 +34,12 @@ public:
     vtkRenderer *renderer() const;
     void resetCamera();
 
+    // 添加新的颜色修改方法
+    void setCellColor(size_t cellId, const QColor &color);
+    void setPointColor(size_t pointId, const QColor &color);
+    void setCellSetColor(const QString &setName, const QColor &color);
+    void setNodeSetColor(const QString &setName, const QColor &color);
+
 public slots:
     void openAbaqusFile(const QString &file_path);
     void openGmshFile(const QString &file_path);
@@ -69,4 +75,10 @@ private:
     } ui_;
 
     InteractorStyle current_style_; // 当前交互样式
+
+    // 添加新的成员变量来存储颜色映射
+    vtkSmartPointer<vtkLookupTable> cell_lut_;
+    vtkSmartPointer<vtkLookupTable> point_lut_;
+    QMap<QString, size_t> elset_index_map_;
+    QMap<QString, size_t> nset_index_map_;
 };

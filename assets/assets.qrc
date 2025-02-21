@@ -2,4 +2,7 @@
     <qresource prefix="/assets/fonts">
         <file alias="uifont.ttf">fonts/uifont.ttf</file>
     </qresource>
+    <qresource prefix="/assets/styles">
+        <file alias="main.qss">styles/main.qss</file>
+    </qresource>
 </RCC>

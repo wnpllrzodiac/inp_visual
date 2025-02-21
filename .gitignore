@@ -13,3 +13,11 @@ CMakeUserPresets.json
 .vscode
 build
 .cursor
+.inp
+.vtk
+.vtu
+.vtp
+.vti
+.vtm
+.vtp
+

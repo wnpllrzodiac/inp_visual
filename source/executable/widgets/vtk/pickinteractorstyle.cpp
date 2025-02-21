@@ -98,6 +98,11 @@ void PointPickInteractorStyle::OnLeftButtonDown()
         if (pointId != -1)
         {
             vtkSmartPointer<vtkUnstructuredGrid> grid = vtkUnstructuredGrid::SafeDownCast(picker->GetDataSet());
+            if (grid == nullptr)
+            {
+                Logging::error("Error: No grid available for picking.");
+                return;
+            }
             auto point = grid->GetPoint(pointId);
 
             bool isSamePoint = highlight_actor_ && std::abs(highlight_actor_->GetPosition()[0] - point[0]) < epsilon &&

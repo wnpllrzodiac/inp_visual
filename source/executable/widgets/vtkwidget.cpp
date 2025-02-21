@@ -1,7 +1,7 @@
 #include "vtkwidget.h"
 #include "inpreader.h"
-#include "pickinteractorstyle.h"
 #include "utils/logging.h"
+#include "vtk/pickinteractorstyle.h"
 #include <QAction>
 #include <QApplication>
 #include <QFileDialog>
@@ -207,29 +207,36 @@ void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
         grid_->GetCellData()->SetScalars(cell_colors);
         grid_->GetPointData()->SetScalars(point_colors);
 
-        // 创建新的查找表
-        auto lut = vtkSmartPointer<vtkLookupTable>::New();
-        lut->SetNumberOfTableValues(elset_sets.size());
-        lut->Build();
+        // 创建并初始化查找表
+        cell_lut_ = vtkSmartPointer<vtkLookupTable>::New();
+        cell_lut_->SetNumberOfTableValues(elset_sets.size());
+        cell_lut_->Build();
 
-        // 为每个单元集合设置不同的颜色
+        point_lut_ = vtkSmartPointer<vtkLookupTable>::New();
+        point_lut_->SetNumberOfTableValues(node_sets.size());
+        point_lut_->Build();
+
+        // 为每个单元集合设置不同的颜色并记录映射关系
         for (int i = 0; i < elset_sets.size(); ++i)
         {
+            QString setName = elset_sets.keys()[i];
+            elset_index_map_[setName] = i;
+
             double r = static_cast<double>(rand()) / RAND_MAX;
             double g = static_cast<double>(rand()) / RAND_MAX;
             double b = static_cast<double>(rand()) / RAND_MAX;
-            lut->SetTableValue(i, r, g, b, 1.0);
+            cell_lut_->SetTableValue(i, r, g, b, 1.0);
         }
 
         // 设置映射器使用查找表
-        edgeMapper->SetLookupTable(lut);
+        edgeMapper->SetLookupTable(cell_lut_);
         edgeMapper->SetScalarModeToUseCellData();
         edgeMapper->SetScalarRange(0, elset_sets.size() - 1);
         edgeMapper->ScalarVisibilityOn();
 
         // 更新标量条设置
         vtkNew<vtkScalarBarActor> scalarBarActor;
-        scalarBarActor->SetLookupTable(lut);
+        scalarBarActor->SetLookupTable(cell_lut_);
         scalarBarActor->SetTitle("Element Sets");
         scalarBarActor->SetNumberOfLabels(elset_sets.size());
         scalarBarActor->SetLabelFormat("%d");
@@ -250,7 +257,7 @@ void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
         // 添加到渲染器
         renderer_->AddActor(edgeActor);
         renderer_->AddActor(pointActor);
-        renderer_->AddActor(scalarBarActor);
+        // renderer_->AddActor(scalarBarActor);
         renderer_->ResetCamera();
         render_window_->Render();
     }
@@ -356,4 +363,56 @@ vtkSmartPointer<vtkIntArray> VtkWidget::generatePointColors(const QMap<QString, 
         auto ids = nset_sets[nset];
     }
     return point_colors;
+}
+
+void VtkWidget::setCellColor(size_t cellId, const QColor &color)
+{
+    if (!grid_ || cellId >= grid_->GetNumberOfCells())
+        return;
+
+    auto cell_colors = vtkIntArray::SafeDownCast(grid_->GetCellData()->GetScalars());
+    if (!cell_colors)
+        return;
+
+    int colorIndex = cell_colors->GetValue(cellId);
+    cell_lut_->SetTableValue(colorIndex, color.redF(), color.greenF(), color.blueF(), color.alphaF());
+
+    render_window_->Render();
+}
+
+void VtkWidget::setPointColor(size_t pointId, const QColor &color)
+{
+    if (!grid_ || pointId >= grid_->GetNumberOfPoints())
+        return;
+
+    auto point_colors = vtkIntArray::SafeDownCast(grid_->GetPointData()->GetScalars());
+    if (!point_colors)
+        return;
+
+    int colorIndex = point_colors->GetValue(pointId);
+    point_lut_->SetTableValue(colorIndex, color.redF(), color.greenF(), color.blueF(), color.alphaF());
+
+    render_window_->Render();
+}
+
+void VtkWidget::setCellSetColor(const QString &setName, const QColor &color)
+{
+    if (!elset_index_map_.contains(setName))
+        return;
+
+    size_t colorIndex = elset_index_map_[setName];
+    cell_lut_->SetTableValue(colorIndex, color.redF(), color.greenF(), color.blueF(), color.alphaF());
+
+    render_window_->Render();
+}
+
+void VtkWidget::setNodeSetColor(const QString &setName, const QColor &color)
+{
+    if (!nset_index_map_.contains(setName))
+        return;
+
+    size_t colorIndex = nset_index_map_[setName];
+    point_lut_->SetTableValue(colorIndex, color.redF(), color.greenF(), color.blueF(), color.alphaF());
+
+    render_window_->Render();
 }

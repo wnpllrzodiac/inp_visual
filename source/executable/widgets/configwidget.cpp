@@ -1,7 +1,14 @@
 #include "configwidget.h"
+#include "config/boundaryconditionswidget.h"
+#include "config/controlparameterswidget.h"
+#include "config/dfnwidget.h"
+#include "config/elementpropertieswidget.h"
+#include "config/jointpropertieswidget.h"
+#include "config/unitwidget.h"
+
 
 ConfigWidget::ConfigWidget(QWidget *parent)
-: QWidget(parent)
+: QTabWidget(parent)
 {
     initUi();
     setupConnections();
@@ -9,32 +16,23 @@ ConfigWidget::ConfigWidget(QWidget *parent)
 
 void ConfigWidget::initUi()
 {
-    auto layout = new QVBoxLayout(this);
+    // 单位
+    addTab(new UnitWidget(), tr("unit"));
 
-    // 长度单位
-    auto lengthLabel = new QLabel("长度单位", this);
-    lengthUnitEdit = new QLineEdit(this);
-    lengthUnitEdit->setText("m");
+    // 控制参数
+    addTab(new ControlParametersWidget(), tr("control_parameters"));
 
-    // 质量单位
-    auto massLabel = new QLabel("质量单位", this);
-    massUnitEdit = new QLineEdit(this);
-    massUnitEdit->setText("kg");
+    // 单元属性
+    addTab(new ElementPropertiesWidget(), tr("element_properties"));
 
-    // 时间单位
-    auto timeLabel = new QLabel("时间单位", this);
-    timeUnitEdit = new QLineEdit(this);
-    timeUnitEdit->setText("s");
+    // 节理属性
+    addTab(new JointPropertiesWidget(), tr("joint_properties"));
 
-    layout->addWidget(lengthLabel);
-    layout->addWidget(lengthUnitEdit);
-    layout->addWidget(massLabel);
-    layout->addWidget(massUnitEdit);
-    layout->addWidget(timeLabel);
-    layout->addWidget(timeUnitEdit);
-    layout->addStretch();
+    // DFN
+    addTab(new DFNWidget(), tr("DFN"));
 
-    setLayout(layout);
+    // 边界条件
+    addTab(new BoundaryConditionsWidget(), tr("boundary_conditions"));
 }
 
 void ConfigWidget::setupConnections() { }
