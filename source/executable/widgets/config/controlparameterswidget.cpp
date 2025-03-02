@@ -1,12 +1,14 @@
 #include "controlparameterswidget.h"
+#include "projectmodel.h"
 #include <QDoubleValidator>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QVBoxLayout>
 
-ControlParametersWidget::ControlParametersWidget(QWidget *parent)
+ControlParametersWidget::ControlParametersWidget(QWidget *parent, ProjectModel *project_model)
 : QWidget(parent)
+, project_model_(project_model)
 {
     initUi();
     setupConnections();
@@ -25,7 +27,7 @@ void ControlParametersWidget::initUi()
     time_steps_label->setFixedWidth(label_width);
     ui_.time_steps = new QLineEdit(this);
     ui_.time_steps->setFixedWidth(edit_width);
-    ui_.time_steps->setText("1e+05");
+    ui_.time_steps->setText(QString::number(project_model_->timeSteps()));
     auto time_steps_validator = new QDoubleValidator(this);
     time_steps_validator->setNotation(QDoubleValidator::ScientificNotation);
     ui_.time_steps->setValidator(time_steps_validator);
@@ -41,7 +43,7 @@ void ControlParametersWidget::initUi()
     output_freq_label->setFixedWidth(label_width);
     ui_.output_frequency = new QLineEdit(this);
     ui_.output_frequency->setFixedWidth(edit_width);
-    ui_.output_frequency->setText("1000");
+    ui_.output_frequency->setText(QString::number(project_model_->outputFrequency()));
     auto output_freq_validator = new QDoubleValidator(this);
     output_freq_validator->setNotation(QDoubleValidator::ScientificNotation);
     ui_.output_frequency->setValidator(output_freq_validator);
@@ -57,7 +59,7 @@ void ControlParametersWidget::initUi()
     min_size_label->setFixedWidth(label_width);
     ui_.min_element_size = new QLineEdit(this);
     ui_.min_element_size->setFixedWidth(edit_width);
-    ui_.min_element_size->setText("1");
+    ui_.min_element_size->setText(QString::number(project_model_->minElementSize()));
     auto min_size_validator = new QIntValidator(this);
     ui_.min_element_size->setValidator(min_size_validator);
     auto min_size_unit = new QLabel(tr("..."), this);
@@ -72,7 +74,7 @@ void ControlParametersWidget::initUi()
     time_step_label->setFixedWidth(label_width);
     ui_.time_step = new QLineEdit(this);
     ui_.time_step->setFixedWidth(edit_width);
-    ui_.time_step->setText("5e-06");
+    ui_.time_step->setText(QString::number(project_model_->timeStep()));
     auto time_step_validator = new QDoubleValidator(this);
     time_step_validator->setNotation(QDoubleValidator::ScientificNotation);
     ui_.time_step->setValidator(time_step_validator);
@@ -88,7 +90,7 @@ void ControlParametersWidget::initUi()
     gravity_label->setFixedWidth(label_width);
     ui_.gravity = new QLineEdit(this);
     ui_.gravity->setFixedWidth(edit_width);
-    ui_.gravity->setText("1000");
+    ui_.gravity->setText(QString::number(project_model_->gravity()));
     auto gravity_validator = new QDoubleValidator(this);
     gravity_validator->setNotation(QDoubleValidator::ScientificNotation);
     ui_.gravity->setValidator(gravity_validator);
@@ -111,4 +113,25 @@ void ControlParametersWidget::initUi()
 void ControlParametersWidget::setupConnections()
 {
     // 在这里添加信号槽连接
+    connect(ui_.time_steps, &QLineEdit::textChanged, this, &ControlParametersWidget::onTimeStepsChanged);
+    connect(ui_.output_frequency, &QLineEdit::textChanged, this, &ControlParametersWidget::onOutputFrequencyChanged);
+    connect(ui_.min_element_size, &QLineEdit::textChanged, this, &ControlParametersWidget::onMinElementSizeChanged);
+    connect(ui_.time_step, &QLineEdit::textChanged, this, &ControlParametersWidget::onTimeStepChanged);
+    connect(ui_.gravity, &QLineEdit::textChanged, this, &ControlParametersWidget::onGravityChanged);
 }
+
+void ControlParametersWidget::onTimeStepsChanged(const QString &text) { project_model_->setTimeSteps(text.toDouble()); }
+
+void ControlParametersWidget::onOutputFrequencyChanged(const QString &text)
+{
+    project_model_->setOutputFrequency(text.toDouble());
+}
+
+void ControlParametersWidget::onMinElementSizeChanged(const QString &text)
+{
+    project_model_->setMinElementSize(text.toInt());
+}
+
+void ControlParametersWidget::onTimeStepChanged(const QString &text) { project_model_->setTimeStep(text.toDouble()); }
+
+void ControlParametersWidget::onGravityChanged(const QString &text) { project_model_->setGravity(text.toDouble()); }

@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "model/projectmodel.h"
 #include "widgets/configwidget.h"
 #include "widgets/vtkwidget.h"
 #include <QFileDialog>
@@ -10,6 +11,7 @@
 MainWindow::MainWindow(QWidget *parent)
 : QMainWindow(parent)
 {
+    project_model_ = new ProjectModel();
     initUI();
     setupConnections();
     retranslateUI();
@@ -43,11 +45,11 @@ void MainWindow::initUI()
     mainSplitter->setChildrenCollapsible(false);
     mainSplitter->setHandleWidth(1);
 
-    configWidget_ = new ConfigWidget(this);
-    vtkWidget_ = new VtkWidget(this);
+    config_widget_ = new ConfigWidget(this, project_model_);
+    vtk_widget_ = new VtkWidget(this, project_model_);
 
-    mainSplitter->addWidget(configWidget_);
-    mainSplitter->addWidget(vtkWidget_);
+    mainSplitter->addWidget(config_widget_);
+    mainSplitter->addWidget(vtk_widget_);
 
     QList<int> sizes;
     sizes << width() * 0.25 << width() * 0.75;
@@ -82,7 +84,7 @@ void MainWindow::openAbaqusFile()
 
     if (!fileName.isEmpty())
     {
-        vtkWidget_->openAbaqusFile(fileName);
+        vtk_widget_->openAbaqusFile(fileName);
     }
 }
 
@@ -92,6 +94,6 @@ void MainWindow::openGmshFile()
 
     if (!fileName.isEmpty())
     {
-        vtkWidget_->openGmshFile(fileName);
+        vtk_widget_->openGmshFile(fileName);
     }
 }

@@ -6,20 +6,20 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
+class ProjectModel;
+
 class ConfigWidget : public QTabWidget
 {
     Q_OBJECT
 public:
-    explicit ConfigWidget(QWidget *parent = nullptr);
+    explicit ConfigWidget(QWidget *parent = nullptr, ProjectModel *project_model = nullptr);
 
 private:
     void initUi();
     void setupConnections();
 
 private:
-    QLineEdit *lengthUnitEdit;
-    QLineEdit *massUnitEdit;
-    QLineEdit *timeUnitEdit;
+    ProjectModel *project_model_;
 };
 
 #endif // CONFIGWIDGET_H

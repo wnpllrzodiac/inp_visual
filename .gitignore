@@ -21,3 +21,6 @@ build
 .vtm
 .vtp
 
+*.inp
+/build_rel
+/build_dbg

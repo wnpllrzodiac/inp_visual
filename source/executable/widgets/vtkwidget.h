@@ -5,14 +5,17 @@
 #include <QToolBar>
 #include <QVTKOpenGLNativeWidget.h>
 #include <QWidget>
+#include <vtkActor.h>
 #include <vtkCellPicker.h>
 #include <vtkGenericOpenGLRenderWindow.h>
 #include <vtkRenderer.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
 
+#include "projectmodel.h"
 #include "utils/vtksignal.h"
 
+class ProjectModel;
 class VtkWidget : public QWidget
 {
     Q_OBJECT
@@ -29,7 +32,8 @@ public:
         PickCell
     };
 
-    explicit VtkWidget(QWidget *parent = nullptr);
+    explicit VtkWidget(QWidget *parent = nullptr, ProjectModel *project_model = nullptr);
+    ~VtkWidget() override = default;
 
     vtkRenderer *renderer() const;
     void resetCamera();
@@ -43,6 +47,7 @@ public:
 public slots:
     void openAbaqusFile(const QString &file_path);
     void openGmshFile(const QString &file_path);
+    void togglePointsVisibility();
 
 private slots:
     void onCellSelected(size_t cellId, int x, int y);
@@ -50,12 +55,20 @@ private slots:
     void onChangeCellColor();
     void onChangePointColor();
     void switchInteractorStyle();
+    void updateElementProperty(QString element_id, const ElementProperty &prop);
+    void updateNodeProperty(QString node_id, const BoundaryCondition &prop);
 
 private:
     void loadInpFile(const QString &filename, const FileType &type);
     void initUi();
     void setupConnections();
     void initVtk();
+    vtkSmartPointer<vtkActor> createCellActor(vtkSmartPointer<vtkUnstructuredGrid> grid,
+                                              vtkSmartPointer<vtkLookupTable> lut);
+    vtkSmartPointer<vtkActor> createPointActor(vtkSmartPointer<vtkUnstructuredGrid> grid,
+                                               vtkSmartPointer<vtkLookupTable> lut);
+    void setupCellColors(const QMap<QString, std::vector<int>> &elset_sets);
+    void setupPointColors(const QMap<QString, std::vector<int>> &node_sets);
     vtkSmartPointer<vtkIntArray> generateCellColors(const QMap<QString, std::vector<int>> &elset_sets);
     vtkSmartPointer<vtkIntArray> generatePointColors(const QMap<QString, std::vector<int>> &nset_sets);
 
@@ -65,12 +78,15 @@ private:
     vtkSmartPointer<vtkGenericOpenGLRenderWindow> render_window_{};
     vtkSmartPointer<vtkUnstructuredGrid> grid_;
     vtkSmartPointer<vtkCellPicker> picker_;
+    vtkSmartPointer<vtkActor> all_points_actor_;
+    vtkSmartPointer<vtkActor> edge_actor_;
 
     SignalEmitter *emitter_;
     struct
     {
         QToolBar *toolbar;
         QAction *switch_style;
+        QAction *toggle_points;
         QLabel *tooltip_widget;
     } ui_;
 
@@ -81,4 +97,6 @@ private:
     vtkSmartPointer<vtkLookupTable> point_lut_;
     QMap<QString, size_t> elset_index_map_;
     QMap<QString, size_t> nset_index_map_;
+
+    ProjectModel *project_model_;
 };

@@ -26,8 +26,9 @@ add_executable(
   runtime.cpp)
 
 target_link_libraries(
-  ${TARGET_NAME} PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-                         Qt${QT_VERSION_MAJOR}::Concurrent assets utils widgets)
+  ${TARGET_NAME}
+  PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Concurrent
+          assets utils widgets model)
 
 set_target_properties(${TARGET_NAME} PROPERTIES DEBUG_POSTFIX
                                                 "${CMAKE_DEBUG_POSTFIX}")

@@ -5,10 +5,11 @@
 #include "config/elementpropertieswidget.h"
 #include "config/jointpropertieswidget.h"
 #include "config/unitwidget.h"
+#include "projectmodel.h"
 
-
-ConfigWidget::ConfigWidget(QWidget *parent)
+ConfigWidget::ConfigWidget(QWidget *parent, ProjectModel *project_model)
 : QTabWidget(parent)
+, project_model_(project_model)
 {
     initUi();
     setupConnections();
@@ -17,22 +18,21 @@ ConfigWidget::ConfigWidget(QWidget *parent)
 void ConfigWidget::initUi()
 {
     // 单位
-    addTab(new UnitWidget(), tr("unit"));
+    addTab(new UnitWidget(this, project_model_), tr("unit"));
 
     // 控制参数
-    addTab(new ControlParametersWidget(), tr("control_parameters"));
+    addTab(new ControlParametersWidget(this, project_model_), tr("control_parameters"));
 
     // 单元属性
-    addTab(new ElementPropertiesWidget(), tr("element_properties"));
-
-    // 节理属性
-    addTab(new JointPropertiesWidget(), tr("joint_properties"));
-
-    // DFN
-    addTab(new DFNWidget(), tr("DFN"));
+    addTab(new ElementPropertiesWidget(this, project_model_), tr("element_properties"));
 
     // 边界条件
-    addTab(new BoundaryConditionsWidget(), tr("boundary_conditions"));
+    addTab(new BoundaryConditionsWidget(this, project_model_), tr("boundary_conditions"));
+    // 节理属性
+    addTab(new JointPropertiesWidget(this, project_model_), tr("joint_properties"));
+
+    // DFN
+    addTab(new DFNWidget(this, project_model_), tr("DFN"));
 }
 
 void ConfigWidget::setupConnections() { }

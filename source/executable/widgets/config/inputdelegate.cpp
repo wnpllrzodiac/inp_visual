@@ -125,8 +125,11 @@ bool ColorDelegate::editorEvent(QEvent *event,
 
 ComboBoxDelegate::ComboBoxDelegate(QObject *parent)
 : QStyledItemDelegate(parent)
+, m_items() // 初始化成员变量
 {
 }
+
+void ComboBoxDelegate::setItems(const QStringList &items) { m_items = items; }
 
 QWidget *
 ComboBoxDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const
@@ -135,11 +138,7 @@ ComboBoxDelegate::createEditor(QWidget *parent, const QStyleOptionViewItem &opti
     Q_UNUSED(index);
 
     QComboBox *editor = new QComboBox(parent);
-    // 添加0到9的选项
-    for (int i = 0; i < 10; ++i)
-    {
-        editor->addItem(QString::number(i));
-    }
+    editor->addItems(m_items); // 使用存储的选项列表
     return editor;
 }
 

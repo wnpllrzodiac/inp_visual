@@ -1,5 +1,6 @@
 #include "vtkwidget.h"
 #include "inpreader.h"
+
 #include "utils/logging.h"
 #include "vtk/pickinteractorstyle.h"
 #include <QAction>
@@ -15,6 +16,7 @@
 #include <QWidget>
 #include <vtkActor.h>
 #include <vtkCamera.h>
+#include <vtkCellArray.h>
 #include <vtkCellData.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkDataSetMapper.h>
@@ -25,6 +27,9 @@
 #include <vtkLookupTable.h>
 #include <vtkOutputWindow.h>
 #include <vtkPointData.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
@@ -54,8 +59,9 @@ public:
 };
 vtkStandardNewMacro(CustomVtkOutputWindow);
 
-VtkWidget::VtkWidget(QWidget *parent)
+VtkWidget::VtkWidget(QWidget *parent, ProjectModel *project_model)
 : QWidget(parent)
+, project_model_(project_model)
 , emitter_(new SignalEmitter(this))
 , current_style_(InteractorStyle::PickCell) // 初始化为PickCell
 {
@@ -70,6 +76,10 @@ void VtkWidget::initUi()
     ui_.toolbar = new QToolBar(this);
     ui_.switch_style = new QAction("Switch Style", this);
     ui_.toolbar->addAction(ui_.switch_style);
+
+    // 添加切换点显示的按钮
+    ui_.toggle_points = new QAction("Toggle Points", this);
+    ui_.toolbar->addAction(ui_.toggle_points);
 
     ui_.tooltip_widget = new QLabel(this);
     ui_.tooltip_widget->setWindowFlags(Qt::ToolTip);
@@ -112,6 +122,9 @@ void VtkWidget::setupConnections()
     connect(emitter_, &SignalEmitter::cellSelected, this, &VtkWidget::onCellSelected);
     connect(emitter_, &SignalEmitter::pointSelected, this, &VtkWidget::onPointSelected);
     connect(ui_.switch_style, &QAction::triggered, this, &VtkWidget::switchInteractorStyle);
+    connect(ui_.toggle_points, &QAction::triggered, this, &VtkWidget::togglePointsVisibility);
+    connect(project_model_, &ProjectModel::elementPropertyUpdated, this, &VtkWidget::updateElementProperty);
+    connect(project_model_, &ProjectModel::boundaryConditionUpdated, this, &VtkWidget::updateNodeProperty);
 }
 
 void VtkWidget::switchInteractorStyle()
@@ -139,9 +152,108 @@ void VtkWidget::switchInteractorStyle()
     }
 }
 
+void VtkWidget::togglePointsVisibility()
+{
+    if (all_points_actor_)
+    {
+        // 切换点的可见性
+        bool visible = all_points_actor_->GetVisibility();
+        all_points_actor_->SetVisibility(!visible);
+        Logging::info("Points visibility: {}", !visible ? "on" : "off");
+        Logging::info("Points actor exists and visibility toggled to: {}", !visible);
+        render_window_->Render();
+    }
+    else
+    {
+        Logging::warn("Points actor does not exist, cannot toggle visibility");
+    }
+}
+
 vtkRenderer *VtkWidget::renderer() const { return renderer_.Get(); }
 
 void VtkWidget::resetCamera() { renderer_->ResetCamera(); }
+
+vtkSmartPointer<vtkActor> VtkWidget::createCellActor(vtkSmartPointer<vtkUnstructuredGrid> grid,
+                                                     vtkSmartPointer<vtkLookupTable> lut)
+{
+    // 创建边缘Actor
+    auto edgeMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+    edgeMapper->SetInputData(grid);
+
+    auto edgeActor = vtkSmartPointer<vtkActor>::New();
+    edgeActor->SetMapper(edgeMapper);
+    edgeActor->GetProperty()->EdgeVisibilityOn();
+    // edgeActor->GetProperty()->SetEdgeColor(0.2, 0.2, 0.2);
+    edgeActor->GetProperty()->SetOpacity(0.5);
+
+    // 设置映射器使用查找表
+    edgeMapper->SetLookupTable(lut);
+    edgeMapper->SetScalarModeToUseCellData();
+    edgeMapper->SetScalarRange(0, lut->GetNumberOfTableValues() - 1);
+    edgeMapper->ScalarVisibilityOn();
+
+    return edgeActor;
+}
+
+vtkSmartPointer<vtkActor> VtkWidget::createPointActor(vtkSmartPointer<vtkUnstructuredGrid> grid,
+                                                      vtkSmartPointer<vtkLookupTable> lut)
+{
+    if (!grid || grid->GetNumberOfPoints() == 0)
+    {
+        return nullptr;
+    }
+
+    // 使用vtkVertexGlyphFilter将点转换为可视化对象
+    auto vertexFilter = vtkSmartPointer<vtkVertexGlyphFilter>::New();
+    vertexFilter->SetInputData(grid);
+    vertexFilter->Update();
+
+    // 创建mapper和actor
+    auto mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+    mapper->SetInputConnection(vertexFilter->GetOutputPort());
+    mapper->SetLookupTable(lut);
+    mapper->SetScalarRange(0, lut->GetNumberOfTableValues() - 1);
+    mapper->ScalarVisibilityOn();
+
+    auto actor = vtkSmartPointer<vtkActor>::New();
+    actor->SetMapper(mapper);
+    actor->GetProperty()->SetPointSize(3); // 设置更大的点尺寸
+    actor->GetProperty()->SetOpacity(1.0); // 确保点完全不透明
+
+    return actor;
+}
+
+void VtkWidget::setupCellColors(const QMap<QString, std::vector<int>> &elset_sets)
+{
+    // 创建并初始化查找表
+    cell_lut_ = vtkSmartPointer<vtkLookupTable>::New();
+    cell_lut_->SetNumberOfTableValues(elset_sets.size());
+    cell_lut_->Build();
+
+    // 为每个单元集合设置不同的颜色并记录映射关系
+    for (int i = 0; i < elset_sets.size(); ++i)
+    {
+        QString setName = elset_sets.keys()[i];
+        elset_index_map_[setName] = i;
+        cell_lut_->SetTableValue(i, 0.5, 0.5, 0.5, 1.0); // 使用默认灰色
+    }
+}
+
+void VtkWidget::setupPointColors(const QMap<QString, std::vector<int>> &node_sets)
+{
+    // 创建并初始化查找表
+    point_lut_ = vtkSmartPointer<vtkLookupTable>::New();
+    point_lut_->SetNumberOfTableValues(node_sets.size() > 0 ? node_sets.size() : 1);
+    point_lut_->Build();
+
+    // 为每个节点集合设置不同的颜色
+    for (int i = 0; i < node_sets.size(); ++i)
+    {
+        QString setName = node_sets.keys()[i];
+
+        point_lut_->SetTableValue(i, 0, 0, 0, 1.0);
+    }
+}
 
 void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
 {
@@ -161,6 +273,10 @@ void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
         reader.parseGmsh(filename);
         grid_ = reader.getMainGrid();
     }
+    auto node_sets = reader.getNodeSets();
+    auto elset_sets = reader.getElementSets();
+    project_model_->setElementSets(elset_sets);
+    project_model_->setNodeSets(node_sets);
     // 清空cell_colors和point_colors
     auto cell_data = grid_->GetCellData();
     for (int i = 0; i < cell_data->GetNumberOfArrays(); i++)
@@ -173,33 +289,8 @@ void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
         point_data->RemoveArray(point_data->GetArrayName(i));
     }
 
-    auto node_sets = reader.getNodeSets();
-    auto elset_sets = reader.getElementSets();
     if (grid_ && grid_->GetNumberOfPoints() > 0)
     {
-        // 创建边缘Actor
-        auto edgeMapper = vtkSmartPointer<vtkDataSetMapper>::New();
-        edgeMapper->SetInputData(grid_);
-
-        auto edgeActor = vtkSmartPointer<vtkActor>::New();
-        edgeActor->SetMapper(edgeMapper);
-        edgeActor->GetProperty()->EdgeVisibilityOn();
-        edgeActor->GetProperty()->SetEdgeColor(0.2, 0.2, 0.2);
-        edgeActor->GetProperty()->SetOpacity(0.5);
-
-        // 创建顶点Actor
-        auto vertexFilter = vtkSmartPointer<vtkVertexGlyphFilter>::New();
-        vertexFilter->SetInputData(grid_);
-        vertexFilter->Update();
-
-        auto pointMapper = vtkSmartPointer<vtkDataSetMapper>::New();
-        pointMapper->SetInputConnection(vertexFilter->GetOutputPort());
-
-        auto pointActor = vtkSmartPointer<vtkActor>::New();
-        pointActor->SetMapper(pointMapper);
-        pointActor->GetProperty()->SetPointSize(1);   // 设置点的大小
-        pointActor->GetProperty()->SetColor(1, 0, 0); // 设置点的颜色为红色
-
         // 创建并填充颜色数组
         auto cell_colors = generateCellColors(elset_sets);
         auto point_colors = generatePointColors(node_sets);
@@ -207,57 +298,48 @@ void VtkWidget::loadInpFile(const QString &filename, const FileType &type)
         grid_->GetCellData()->SetScalars(cell_colors);
         grid_->GetPointData()->SetScalars(point_colors);
 
-        // 创建并初始化查找表
-        cell_lut_ = vtkSmartPointer<vtkLookupTable>::New();
-        cell_lut_->SetNumberOfTableValues(elset_sets.size());
-        cell_lut_->Build();
+        // 设置颜色查找表
+        setupCellColors(elset_sets);
+        setupPointColors(node_sets);
 
-        point_lut_ = vtkSmartPointer<vtkLookupTable>::New();
-        point_lut_->SetNumberOfTableValues(node_sets.size());
-        point_lut_->Build();
+        // 创建单元和点的Actor
+        edge_actor_ = createCellActor(grid_, cell_lut_);
+        all_points_actor_ = createPointActor(grid_, point_lut_);
 
-        // 为每个单元集合设置不同的颜色并记录映射关系
-        for (int i = 0; i < elset_sets.size(); ++i)
+        // 确保点Actor默认可见
+        if (all_points_actor_)
         {
-            QString setName = elset_sets.keys()[i];
-            elset_index_map_[setName] = i;
-
-            double r = static_cast<double>(rand()) / RAND_MAX;
-            double g = static_cast<double>(rand()) / RAND_MAX;
-            double b = static_cast<double>(rand()) / RAND_MAX;
-            cell_lut_->SetTableValue(i, r, g, b, 1.0);
+            all_points_actor_->SetVisibility(true);
+            Logging::info("Points actor created successfully and set to visible");
         }
-
-        // 设置映射器使用查找表
-        edgeMapper->SetLookupTable(cell_lut_);
-        edgeMapper->SetScalarModeToUseCellData();
-        edgeMapper->SetScalarRange(0, elset_sets.size() - 1);
-        edgeMapper->ScalarVisibilityOn();
-
-        // 更新标量条设置
-        vtkNew<vtkScalarBarActor> scalarBarActor;
-        scalarBarActor->SetLookupTable(cell_lut_);
-        scalarBarActor->SetTitle("Element Sets");
-        scalarBarActor->SetNumberOfLabels(elset_sets.size());
-        scalarBarActor->SetLabelFormat("%d");
-        scalarBarActor->SetOrientationToVertical();
-        scalarBarActor->SetPosition(0.85, 0.1);
-        scalarBarActor->SetWidth(0.15);
-        scalarBarActor->SetHeight(0.8);
-
-        // 设置标签文本
-        QStringList labelTexts;
-        for (int i = 0; i < elset_sets.size(); ++i)
+        else
         {
-            QString label = QString("%1: %2").arg(i).arg(elset_sets.keys()[i]);
-            labelTexts.append(label);
+            Logging::error("Failed to create points actor!");
         }
-        scalarBarActor->SetTitle(labelTexts.join("\n").toStdString().c_str());
 
         // 添加到渲染器
-        renderer_->AddActor(edgeActor);
-        renderer_->AddActor(pointActor);
-        // renderer_->AddActor(scalarBarActor);
+        if (edge_actor_)
+        {
+            renderer_->AddActor(edge_actor_);
+            Logging::info("Edge actor added to renderer");
+        }
+
+        if (all_points_actor_)
+        {
+            // 设置点的Z值略高于边，确保点显示在边上面
+            all_points_actor_->SetPosition(0, 0, 0.01);
+            renderer_->AddActor(all_points_actor_);
+            Logging::info("Points actor added to renderer");
+        }
+
+        // 输出点和单元的数量
+        Logging::info("Loaded grid with {} points and {} cells", grid_->GetNumberOfPoints(), grid_->GetNumberOfCells());
+        if (all_points_actor_)
+        {
+            Logging::info("Points actor visibility: {}", all_points_actor_->GetVisibility() ? "on" : "off");
+            Logging::info("Points actor point size: {}", all_points_actor_->GetProperty()->GetPointSize());
+        }
+
         renderer_->ResetCamera();
         render_window_->Render();
     }
@@ -356,12 +438,30 @@ vtkSmartPointer<vtkIntArray> VtkWidget::generatePointColors(const QMap<QString, 
     point_colors->SetName("PointColors");
     point_colors->SetNumberOfComponents(1);
     point_colors->SetNumberOfTuples(grid_->GetNumberOfPoints());
+
+    // 初始化所有点的颜色为默认值0
+    for (vtkIdType i = 0; i < grid_->GetNumberOfPoints(); ++i)
+    {
+        point_colors->SetValue(i, 0);
+    }
+
     size_t size = nset_sets.size();
     for (size_t i = 0; i < size; i++)
     {
         auto nset = nset_sets.keys()[i];
         auto ids = nset_sets[nset];
+        nset_index_map_[nset] = i; // 更新节点集合的索引映射
+
+        // 为每个节点集合中的点分配对应的颜色索引
+        for (auto id : ids)
+        {
+            if (id > 0 && id <= grid_->GetNumberOfPoints())
+            {
+                point_colors->SetValue(id - 1, i);
+            }
+        }
     }
+
     return point_colors;
 }
 
@@ -415,4 +515,18 @@ void VtkWidget::setNodeSetColor(const QString &setName, const QColor &color)
     point_lut_->SetTableValue(colorIndex, color.redF(), color.greenF(), color.blueF(), color.alphaF());
 
     render_window_->Render();
+}
+
+void VtkWidget::updateElementProperty(QString element_id, const ElementProperty &prop)
+{
+    Logging::info("Update element property: {}", element_id);
+    auto color = prop.color;
+    setCellSetColor(element_id, color);
+}
+
+void VtkWidget::updateNodeProperty(QString node_id, const BoundaryCondition &prop)
+{
+    auto color = prop.color;
+    setNodeSetColor(node_id, color);
+    Logging::info("Update node property: {}", node_id);
 }

@@ -45,9 +45,9 @@
         {
             "name": "common-debug",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build_dbg",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install_dbg",
                 "CMAKE_BUILD_TYPE": "Debug",
                 "CMAKE_DEBUG_POSTFIX": {
                     "type": "STRING",
@@ -58,18 +58,18 @@
         {
             "name": "common-release",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build_rel",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install_rel",
                 "CMAKE_BUILD_TYPE": "Release"
             }
         },
         {
             "name": "common-relwithdbg",
             "hidden": true,
-            "binaryDir": "${sourceDir}/build",
+            "binaryDir": "${sourceDir}/build_relwithdbg",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install",
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/install_relwithdbg",
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
         },

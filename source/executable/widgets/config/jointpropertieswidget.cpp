@@ -1,8 +1,10 @@
 #include "jointpropertieswidget.h"
+#include "projectmodel.h"
 #include <QVBoxLayout>
 
-JointPropertiesWidget::JointPropertiesWidget(QWidget *parent)
+JointPropertiesWidget::JointPropertiesWidget(QWidget *parent, ProjectModel *project_model)
 : QWidget(parent)
+, project_model_(project_model)
 {
     initUi();
     setupConnections();

@@ -17,3 +17,10 @@ target_link_libraries(${TARGET_NAME} PUBLIC Qt${QT_VERSION_MAJOR}::Core
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_definitions(${TARGET_NAME} PRIVATE "DEBUG")
 endif()
+# 复制meshio.exe到bin目录
+add_custom_command(
+  TARGET ${TARGET_NAME}
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/meshio.exe
+          ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/meshio.exe
+  COMMENT "正在复制meshio.exe到bin目录")

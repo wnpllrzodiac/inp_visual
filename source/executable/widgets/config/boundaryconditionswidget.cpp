@@ -1,35 +1,26 @@
 #include "boundaryconditionswidget.h"
 #include "inputdelegate.h"
+#include "projectmodel.h"
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-BoundaryConditionsWidget::BoundaryConditionsWidget(QWidget *parent)
+BoundaryConditionsWidget::BoundaryConditionsWidget(QWidget *parent, ProjectModel *project_model)
 : QWidget(parent)
+, project_model_(project_model)
 {
     initUi();
     setupConnections();
-
-    // 创建并设置验证delegate
-    validate_delegate_ = new InputValidationDelegate(this);
-    color_delegate_ = new ColorDelegate(this);
-    combobox_delegate_ = new ComboBoxDelegate(this);
-
-    // 为不同行设置delegate
-    ui_.properties_table->setItemDelegateForRow(0, combobox_delegate_);
-    ui_.properties_table->setItemDelegateForRow(1, combobox_delegate_);
-    ui_.properties_table->setItemDelegateForRow(3, combobox_delegate_);
-    ui_.properties_table->setItemDelegateForRow(7, color_delegate_);
-
-    // 为数值输入行设置验证delegate
-    for (int row : {2, 4, 5, 6})
-    {
-        ui_.properties_table->setItemDelegateForRow(row, validate_delegate_);
-    }
+    setupDelegates();
 }
 
 void BoundaryConditionsWidget::initUi()
@@ -38,15 +29,14 @@ void BoundaryConditionsWidget::initUi()
 
     // 创建表格
     ui_.properties_table = new QTableWidget(this);
-    ui_.properties_table->setRowCount(8);    // 8个属性
-    ui_.properties_table->setColumnCount(1); // 初始只有一个节点
+    ui_.properties_table->setRowCount(8); // 8个属性
 
     // 设置滚动条策略
     ui_.properties_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     ui_.properties_table->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     // 固定表格大小
-    ui_.properties_table->setFixedWidth(400);
+    // ui_.properties_table->setFixedWidth(400);
 
     setupTableHeaders();
 
@@ -98,18 +88,110 @@ void BoundaryConditionsWidget::setupConnections()
 {
     connect(ui_.add_button, &QPushButton::clicked, this, &BoundaryConditionsWidget::addNewNode);
     connect(ui_.remove_button, &QPushButton::clicked, this, &BoundaryConditionsWidget::removeSelectedNode);
+    connect(ui_.properties_table, &QTableWidget::cellChanged, this, &BoundaryConditionsWidget::onCellChanged);
+    connect(project_model_, &ProjectModel::nodeSetsChanged, this, &BoundaryConditionsWidget::onNodeSetsChanged);
+}
+
+void BoundaryConditionsWidget::setupDelegates()
+{
+    // 创建并设置验证delegate
+    validate_delegate_ = new InputValidationDelegate(this);
+    color_delegate_ = new ColorDelegate(this);
+    combobox_delegate_ = new ComboBoxDelegate(this);
+
+    // 更新节点集列表
+    updateNodeSetItems();
+
+    // 为不同行设置delegate
+    // ui_.properties_table->setItemDelegateForRow(0, combobox_delegate_);
+    ui_.properties_table->setItemDelegateForRow(1, combobox_delegate_);
+    ui_.properties_table->setItemDelegateForRow(3, combobox_delegate_);
+    ui_.properties_table->setItemDelegateForRow(7, color_delegate_);
+
+    // 为数值输入行设置验证delegate
+    for (int row : {2, 4, 5, 6})
+    {
+        ui_.properties_table->setItemDelegateForRow(row, validate_delegate_);
+    }
+}
+
+void BoundaryConditionsWidget::updateNodeSetItems()
+{
+    // QStringList items;
+    // for (const auto &set : project_model_->nodeSets().keys())
+    // {
+    //     items << set;
+    // }
+    // combobox_delegate_->setItems(items);
 }
 
 void BoundaryConditionsWidget::addNewNode()
 {
-    const int col = ui_.properties_table->columnCount();
-    ui_.properties_table->setColumnCount(col + 1);
+    // 检查是否有可用的节点集
+    if (project_model_->nodeSets().isEmpty())
+    {
+        QMessageBox::warning(this, tr("警告"), tr("没有可用的节点集。请先创建节点集。"));
+        return;
+    }
 
-    // 设置新列的表头
+    // 创建对话框
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("添加新节点"));
+    dialog.setMinimumWidth(300);
+
+    // 创建布局
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+
+    // 添加标签
+    QLabel *label = new QLabel(tr("选择节点集:"), &dialog);
+    layout->addWidget(label);
+
+    // 创建下拉框
+    QComboBox *comboBox = new QComboBox(&dialog);
+    for (const auto &set : project_model_->nodeSets().keys())
+    {
+        comboBox->addItem(set);
+    }
+    layout->addWidget(comboBox);
+
+    // 添加按钮
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttonBox);
+
+    // 显示对话框
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return; // 用户取消了操作
+    }
+
+    // 获取选择的节点集
+    QString selectedNodeSet = comboBox->currentText();
+    if (selectedNodeSet.isEmpty())
+    {
+        return;
+    }
+
+    const QSignalBlocker blocker(ui_.properties_table);
+    const int col = ui_.properties_table->columnCount();
+
+    if (col >= project_model_->nodeSets().size())
+    {
+        return;
+    }
+
+    ui_.properties_table->setColumnCount(col + 1);
     ui_.properties_table->setHorizontalHeaderItem(col, new QTableWidgetItem(tr("Node %1").arg(col + 1)));
 
+    // 创建新的边界条件
+    BoundaryCondition newCondition;
+    newCondition.id = selectedNodeSet; // 设置为选择的节点集ID
+
     // 节点属性
-    auto id_item = new QTableWidgetItem("1");
+    auto id_item = new QTableWidgetItem();
+    id_item->setData(Qt::EditRole, selectedNodeSet);
+    id_item->setFlags(id_item->flags() & ~Qt::ItemIsEditable); // 设置为只读
     ui_.properties_table->setItem(0, col, id_item);
 
     // X方向边界条件类型
@@ -138,8 +220,12 @@ void BoundaryConditionsWidget::addNewNode()
 
     // 颜色
     auto color_item = new QTableWidgetItem();
-    color_item->setData(Qt::BackgroundRole, QColor(Qt::yellow));
+    color_item->setData(Qt::BackgroundRole, QColor(Qt::black));
     ui_.properties_table->setItem(7, col, color_item);
+    newCondition.color = QColor(Qt::black);
+
+    // 添加到模型
+    project_model_->addBoundaryCondition(newCondition);
 }
 
 void BoundaryConditionsWidget::removeSelectedNode()
@@ -147,12 +233,91 @@ void BoundaryConditionsWidget::removeSelectedNode()
     const auto selected_cols = ui_.properties_table->selectionModel()->selectedColumns();
     if (!selected_cols.isEmpty())
     {
-        ui_.properties_table->removeColumn(selected_cols.first().column());
+        int col = selected_cols.first().column();
+
+        // 获取要删除的边界条件ID
+        QTableWidgetItem *idItem = ui_.properties_table->item(0, col);
+        if (idItem)
+        {
+            QString boundary_id = idItem->text();
+            project_model_->removeBoundaryCondition(boundary_id);
+        }
+
+        ui_.properties_table->removeColumn(col);
 
         // 更新剩余列的表头
-        for (int col = 0; col < ui_.properties_table->columnCount(); ++col)
+        for (int i = 0; i < ui_.properties_table->columnCount(); ++i)
         {
-            ui_.properties_table->setHorizontalHeaderItem(col, new QTableWidgetItem(tr("Node %1").arg(col + 1)));
+            ui_.properties_table->setHorizontalHeaderItem(i, new QTableWidgetItem(tr("Node %1").arg(i + 1)));
         }
     }
+}
+
+void BoundaryConditionsWidget::onCellChanged(int row, int column)
+{
+    if (row < 0 || column < 0 || column >= ui_.properties_table->columnCount())
+        return;
+
+    // 获取当前节点的ID
+    QTableWidgetItem *idItem = ui_.properties_table->item(0, column);
+    if (!idItem)
+        return;
+
+    QString boundary_id = idItem->text();
+
+    // 确保索引有效
+    if (column >= project_model_->boundaryConditions().size())
+        return;
+
+    // 获取当前边界条件
+    BoundaryCondition condition = project_model_->boundaryConditions()[column];
+
+    QTableWidgetItem *item = ui_.properties_table->item(row, column);
+    if (!item)
+        return;
+
+    QString value = item->text();
+
+    // 使用switch更新属性
+    switch (row)
+    {
+    case 0:
+        condition.id = value;
+        break;
+    case 1:
+        condition.x_direction_type = value.toInt();
+        break;
+    case 2:
+        condition.x_direction_size = value.toDouble();
+        break;
+    case 3:
+        condition.y_direction_type = value.toInt();
+        break;
+    case 4:
+        condition.y_direction_size = value.toDouble();
+        break;
+    case 5:
+        condition.unit_surface_force = value.toDouble();
+        break;
+    case 6:
+        condition.unit_shear_force = value.toDouble();
+        break;
+    case 7:
+        {
+            auto color = item->data(Qt::BackgroundRole).value<QColor>();
+            condition.color = color;
+            break;
+        }
+    default:
+        return;
+    }
+
+    // 更新项目模型中的边界条件
+    project_model_->updateBoundaryCondition(boundary_id, condition);
+}
+
+void BoundaryConditionsWidget::onNodeSetsChanged()
+{
+    // 更新节点集列表
+    updateNodeSetItems();
 }

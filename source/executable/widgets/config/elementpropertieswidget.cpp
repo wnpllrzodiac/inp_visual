@@ -1,36 +1,29 @@
 #include "elementpropertieswidget.h"
 #include "inputdelegate.h"
+#include "projectmodel.h"
 #include <QColorDialog>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDoubleValidator>
 #include <QEvent>
 #include <QFile>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
-ElementPropertiesWidget::ElementPropertiesWidget(QWidget *parent)
+ElementPropertiesWidget::ElementPropertiesWidget(QWidget *parent, ProjectModel *project_model)
 : QWidget(parent)
+, project_model_(project_model)
 {
     initUi();
     setupConnections();
-
-    // 创建并设置验证delegate
-    validate_delegate_ = new InputValidationDelegate(this);
-    color_delegate_ = new ColorDelegate(this);
-    combobox_delegate_ = new ComboBoxDelegate(this);
-
-    // 为不同行设置delegate
-    ui_.properties_table->setItemDelegateForRow(0, combobox_delegate_);
-    ui_.properties_table->setItemDelegateForRow(9, color_delegate_);
-    // 为其他行设置数值验证delegate
-    for (int i = 1; i < 9; ++i)
-    {
-        ui_.properties_table->setItemDelegateForRow(i, validate_delegate_);
-    }
+    setupDelegates();
 }
 
 void ElementPropertiesWidget::initUi()
@@ -39,15 +32,14 @@ void ElementPropertiesWidget::initUi()
 
     // 创建表格
     ui_.properties_table = new QTableWidget(this);
-    ui_.properties_table->setRowCount(10);   // 10个属性
-    ui_.properties_table->setColumnCount(1); // 初始只有一个单元
+    ui_.properties_table->setRowCount(10); // 10个属性
 
     // 设置滚动条策略
     ui_.properties_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     ui_.properties_table->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     // 固定表格大小，启用滚动
-    ui_.properties_table->setFixedWidth(400); // 设置一个合适的固定宽度
+    // ui_.properties_table->setFixedWidth(400); // 设置一个合适的固定宽度
 
     setupTableHeaders();
 
@@ -106,57 +98,127 @@ void ElementPropertiesWidget::setupConnections()
 {
     connect(ui_.add_button, &QPushButton::clicked, this, &ElementPropertiesWidget::addNewElement);
     connect(ui_.remove_button, &QPushButton::clicked, this, &ElementPropertiesWidget::removeSelectedElement);
+    connect(ui_.properties_table, &QTableWidget::cellChanged, this, &ElementPropertiesWidget::onCellChanged);
+    connect(project_model_, &ProjectModel::elementSetsChanged, this, &ElementPropertiesWidget::onElementSetsChanged);
+}
+
+void ElementPropertiesWidget::setupDelegates()
+{
+    // 创建并设置验证delegate
+    validate_delegate_ = new InputValidationDelegate(this);
+    color_delegate_ = new ColorDelegate(this);
+    combobox_delegate_ = new ComboBoxDelegate(this);
+
+    // 更新元素集列表
+    updateElementSetItems();
+
+    // 为不同行设置delegate
+    // 不再为ID行设置代理
+    ui_.properties_table->setItemDelegateForRow(9, color_delegate_);
+
+    // 为其他行设置数值验证delegate
+    for (int i = 1; i < 9; ++i)
+    {
+        ui_.properties_table->setItemDelegateForRow(i, validate_delegate_);
+    }
+}
+
+void ElementPropertiesWidget::updateElementSetItems()
+{
+    QStringList items;
+    for (const auto &set : project_model_->elementSets().keys())
+    {
+        items << set;
+    }
+    combobox_delegate_->setItems(items);
 }
 
 void ElementPropertiesWidget::addNewElement()
 {
-    const int col = ui_.properties_table->columnCount();
-    ui_.properties_table->setColumnCount(col + 1);
+    // 检查是否有可用的元素集
+    if (project_model_->elementSets().isEmpty())
+    {
+        QMessageBox::warning(this, tr("Warning"), tr("No element sets available. Please create element sets first."));
+        return;
+    }
 
-    // 设置新列的表头
+    // 创建对话框
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Add New Element"));
+    dialog.setMinimumWidth(300);
+
+    // 创建布局
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+
+    // 添加标签
+    QLabel *label = new QLabel(tr("Select Element Set:"), &dialog);
+    layout->addWidget(label);
+
+    // 创建下拉框
+    QComboBox *comboBox = new QComboBox(&dialog);
+    for (const auto &set : project_model_->elementSets().keys())
+    {
+        comboBox->addItem(set);
+    }
+    layout->addWidget(comboBox);
+
+    // 添加按钮
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttonBox);
+
+    // 显示对话框
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return; // 用户取消了操作
+    }
+
+    // 获取选择的元素集
+    QString selectedElementSet = comboBox->currentText();
+    if (selectedElementSet.isEmpty())
+    {
+        return;
+    }
+
+    const QSignalBlocker blocker(ui_.properties_table);
+    const int col = ui_.properties_table->columnCount();
+
+    if (col >= project_model_->elementSets().size())
+    {
+        return;
+    }
+
+    ui_.properties_table->setColumnCount(col + 1);
     ui_.properties_table->setHorizontalHeaderItem(col, new QTableWidgetItem(tr("Element %1").arg(col + 1)));
 
-    // Element ID (使用ComboBox)
-    auto id_item = new QTableWidgetItem(QString::number(col));
+    // 创建新的元素属性
+    ElementProperty newProperty;
+    newProperty.id = selectedElementSet; // 设置为选择的元素集ID
+
+    // 设置表格项
+    // Element ID - 设置为只读
+    auto id_item = new QTableWidgetItem();
+    id_item->setData(Qt::EditRole, selectedElementSet);
+    id_item->setFlags(id_item->flags() & ~Qt::ItemIsEditable); // 设置为只读
     ui_.properties_table->setItem(0, col, id_item);
 
-    // 属性类型 (下拉框)
-    auto type_combo = new QComboBox();
-    type_combo->addItem(tr("5 - Plane Stress"));
-    ui_.properties_table->setCellWidget(1, col, type_combo);
-
-    // 杨氏模量
-    auto youngs_item = new QTableWidgetItem("3.53e+10");
-    ui_.properties_table->setItem(2, col, youngs_item);
-
-    // 泊松比
-    auto poisson_item = new QTableWidgetItem("0.24");
-    ui_.properties_table->setItem(3, col, poisson_item);
-
-    // 摩擦系数
-    auto friction_item = new QTableWidgetItem("1.27");
-    ui_.properties_table->setItem(4, col, friction_item);
-
-    // 密度
-    auto density_item = new QTableWidgetItem("2537");
-    ui_.properties_table->setItem(5, col, density_item);
-
-    // 粘滞阻尼
-    auto damping_item = new QTableWidgetItem("2.37e+07");
-    ui_.properties_table->setItem(6, col, damping_item);
-
-    // 接触刚度
-    auto normal_stiffness_item = new QTableWidgetItem("3.53e+11");
-    ui_.properties_table->setItem(7, col, normal_stiffness_item);
-
-    // 切向刚度
-    auto tangential_stiffness_item = new QTableWidgetItem("3.53e+11");
-    ui_.properties_table->setItem(8, col, tangential_stiffness_item);
+    // 其他属性项
+    for (int row = 1; row < 9; ++row)
+    {
+        auto item = new QTableWidgetItem();
+        item->setData(Qt::EditRole, "");
+        ui_.properties_table->setItem(row, col, item);
+    }
 
     // 颜色
     auto color_item = new QTableWidgetItem();
-    color_item->setData(Qt::BackgroundRole, QColor(Qt::blue));
+    color_item->setData(Qt::BackgroundRole, QColor(Qt::white));
     ui_.properties_table->setItem(9, col, color_item);
+    newProperty.color = QColor(Qt::white);
+
+    // 添加到模型
+    project_model_->addElementProperty(newProperty);
 }
 
 void ElementPropertiesWidget::removeSelectedElement()
@@ -177,4 +239,79 @@ void ElementPropertiesWidget::removeSelectedElement()
             ui_.properties_table->setItem(0, col, id_item);
         }
     }
+}
+
+void ElementPropertiesWidget::onCellChanged(int row, int column)
+{
+    if (row < 0 || column < 0 || column >= ui_.properties_table->columnCount())
+        return;
+
+    // 获取当前元素的ID
+    QTableWidgetItem *idItem = ui_.properties_table->item(0, column);
+    if (!idItem)
+        return;
+
+    QString element_id = idItem->text();
+
+    // 确保索引有效
+    if (column >= project_model_->elementProperties().size())
+        return;
+
+    // 获取当前元素的属性
+    ElementProperty prop = project_model_->elementProperties()[column];
+
+    QTableWidgetItem *item = ui_.properties_table->item(row, column);
+    if (!item)
+        return;
+
+    QString value = item->text();
+
+    // 使用switch更新属性
+    switch (row)
+    {
+    case 0:
+        prop.id = value;
+        break;
+    case 1:
+        prop.type = value.toInt();
+        break;
+    case 2:
+        prop.youngs_modulus = value.toDouble();
+        break;
+    case 3:
+        prop.poisson_ratio = value.toDouble();
+        break;
+    case 4:
+        prop.friction_coef = value.toDouble();
+        break;
+    case 5:
+        prop.density = value.toDouble();
+        break;
+    case 6:
+        prop.viscous_damping = value.toDouble();
+        break;
+    case 7:
+        prop.normal_stiffness = value.toDouble();
+        break;
+    case 8:
+        prop.tangential_stiffness = value.toDouble();
+        break;
+    case 9:
+        {
+            auto color = item->data(Qt::BackgroundRole).value<QColor>();
+            prop.color = color;
+            break;
+        }
+    default:
+        return;
+    }
+
+    // 更新项目模型中的属性
+    project_model_->updateElementProperty(element_id, prop);
+}
+
+void ElementPropertiesWidget::onElementSetsChanged()
+{
+    // 使用之前创建的辅助方法更新元素集列表
+    updateElementSetItems();
 }
