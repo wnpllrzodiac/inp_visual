@@ -4,8 +4,6 @@ project(
   VERSION 0.0.1
   LANGUAGES C CXX)
 
-set(QT_DIR "C:\\Qt\\6.8.1\\msvc2022_64\\lib\\cmake\\Qt6")
-
 option(BUILD_ASSISTANT_TOOLS "Build assistant tools" OFF)
 option(BUILD_UNIT_TESTS "Build unit tests" OFF)
 

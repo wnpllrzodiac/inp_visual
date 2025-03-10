@@ -1,12 +1,10 @@
 # VTKInit.cmake
-set(VTK_DIR
-    "F:\\kits\\VTK-9.4.1\\Install_lib\\lib\\cmake\\vtk-9.4")
+set(VTK_DIR "D:/git/inp_visual/sdk/VTK/lib/cmake")
 # message(${VTK_DIR})
 find_package(VTK QUIET)
 
 if(NOT VTK_FOUND)
-  # VTK 未在本地找到，从 Git 克隆
-  message("VTK 未在本地找到，尝试从 Git 克隆...")
+  message(FATAL_ERROR "failed to find vtk")
 endif()
 
 include_directories(${VTK_USE_FILE})
