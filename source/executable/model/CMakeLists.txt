@@ -2,8 +2,10 @@ set(TARGET_NAME model)
 
 set(PRIVATE_SOURCES projectmodel.h projectmodel.cpp inpreader.h inpreader.cpp)
 
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Gui)
+set(Qt6_DIR "C:/Qt/6.5.39/win64")
+
+find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Gui)
 
 add_library(${TARGET_NAME} STATIC ${PRIVATE_SOURCES})
 create_and_init_vtk_target(${TARGET_NAME})

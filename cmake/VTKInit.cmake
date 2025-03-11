@@ -1,5 +1,5 @@
 # VTKInit.cmake
-set(VTK_DIR "D:/git/inp_visual/sdk/VTK/lib/cmake")
+set(VTK_DIR "D:/git/inp_visual/sdk/VTK/lib/cmake/vtk-9.3")
 # message(${VTK_DIR})
 find_package(VTK QUIET)
 

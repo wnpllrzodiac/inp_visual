@@ -2,12 +2,15 @@
 
 cmake_minimum_required(VERSION 3.23.0 FATAL_ERROR)
 
+set(Qt6_DIR "C:/Qt/6.5.39/win64")
+
 set(TARGET_NAME ${PROJECT_NAME})
 
-find_package(QT NAMES Qt6 Qt5 CONFIG REQUIRED COMPONENTS Widgets Network
-                                                         Concurrent)
-find_package(Qt${QT_VERSION_MAJOR} CONFIG REQUIRED COMPONENTS Widgets Network
-                                                              Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core)
+find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Network)
+find_package(Qt6 REQUIRED COMPONENTS Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS OpenGLWidgets)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
