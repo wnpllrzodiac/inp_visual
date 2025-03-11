@@ -24,3 +24,6 @@ build
 *.inp
 /build_rel
 /build_dbg
+/build__
+
+/sdk
