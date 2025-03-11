@@ -1,6 +1,8 @@
 # inp_visual
 
 ## build vtk with VS2022 and QT6.8
+# https://blog.csdn.net/qusibaniha/article/details/136068806
+# https://blog.csdn.net/weixin_52402390/article/details/141829812
 1. git clone https://github.com/Kitware/VTK.git
 2. git checkout v9.3.1
 3. cmake check UI "Grouped", "Advanced"
